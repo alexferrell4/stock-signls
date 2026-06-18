@@ -1,0 +1,63 @@
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --bg:      #080D1A;
+  --surf:    #0F1628;
+  --surf2:   #162035;
+  --surf3:   #1C2A42;
+  --border:  #1C2A42;
+  --border2: #243250;
+  --blue:    #4F8EF7;
+  --blue-d:  rgba(79, 142, 247, 0.12);
+  --buy:     #00D4A0;
+  --buy-d:   rgba(0, 212, 160, 0.1);
+  --hold:    #F5A623;
+  --hold-d:  rgba(245, 166, 35, 0.1);
+  --sell:    #FF4D6A;
+  --sell-d:  rgba(255, 77, 106, 0.1);
+  --ai:      #A78BFA;
+  --ai-d:    rgba(167, 139, 250, 0.1);
+  --text:    #E8F0FE;
+  --muted:   #4A6080;
+  --dim:     #7A95B8;
+  --mono:    "JetBrains Mono", monospace;
+  --sans:    "Space Grotesk", sans-serif;
+}
+
+/* ─── Reset ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ─── Skeleton shimmer ───────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surf) 25%, var(--surf2) 50%, var(--surf) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s infinite;
+  border-radius: 6px;
+}
+
+/* ─── Pulse animation ────────────────────────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.65); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
