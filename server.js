@@ -25,9 +25,9 @@ const PORT    = 3000;
 
 // ─── YOUR API KEYS (paste here, never share publicly) ─────────────────────────
 const CONFIG = {
-  FINNHUB_KEY:   process.env.FINNHUB_KEY,    // https://finnhub.io/dashboard
-  NEWS_API_KEY:  process.env.NEWS_API_KEY,         // https://newsapi.org
-  CLAUDE_API_KEY:process.env.CLAUDE_API_KEY,   // https://console.anthropic.com/settings/keys
+  VITE_FINNHUB_KEY:   process.env.VITE_FINNHUB_KEY,    // https://finnhub.io/dashboard
+  VITE_NEWS_API_KEY:  process.env.VITE_NEWS_API_KEY,         // https://newsapi.org
+  VITE_CLAUDE_API_KEY:process.env.VITE_CLAUDE_API_KEY,   // https://console.anthropic.com/settings/keys
 };
 
 // ─── Ticker Universe ──────────────────────────────────────────────────────────
