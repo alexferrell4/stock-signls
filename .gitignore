@@ -1,0 +1,23 @@
+# Environment variables — NEVER commit this
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules
+
+# Vite build output
+dist
+dist-ssr
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode
+.idea
