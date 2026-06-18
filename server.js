@@ -15,9 +15,9 @@ const __dirname = path.dirname(__filename);
 // ─── YOUR API KEYS ──────────────────────────────────────────────
 // IMPORTANT: backend must use process.env (NOT import.meta.env)
 const CONFIG = {
-  FINNHUB_KEY: process.env.VITE_FINNHUB_KEY,
-  NEWS_API_KEY: process.env.VITE_NEWS_API_KEY,
-  CLAUDE_API_KEY: process.env.VITE_CLAUDE_API_KEY,
+  FINNHUB_KEY: process.env.FINNHUB_KEY,
+  NEWS_API_KEY: process.env.NEWS_API_KEY,
+  CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
 };
 
 // ─── Ticker Universe ────────────────────────────────────────────
