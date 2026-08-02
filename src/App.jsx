@@ -3,6 +3,7 @@ import Navbar from "./components/Navbar";
 import StatStrip from "./components/StatStrip";
 import StockCard from "./components/StockCard";
 import StockModal from "./components/StockModal";
+import Advisor from "./components/Advisor";
 import { useStocks } from "./hooks/useStocks";
 
 const FILTERS = ["ALL", "BUY", "HOLD", "SELL"];
@@ -44,6 +45,7 @@ export default function App() {
     <div style={{ minHeight: "100vh" }}>
       <Navbar nextUpdate={nextUpdate} onRefresh={refresh} refreshing={refreshing} />
       <StatStrip summary={summary} lastUpdated={lastUpdated} />
+      <Advisor />
 
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px" }}>

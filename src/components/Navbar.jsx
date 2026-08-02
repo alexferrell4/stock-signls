@@ -32,7 +32,7 @@ export default function Navbar({ nextUpdate, onRefresh, refreshing }) {
           animation: "pulse 2.5s ease-in-out infinite",
           display: "inline-block",
         }} />
-        Stock Signals
+        Trendline
         <span style={{
           padding: "3px 8px", borderRadius: 5,
           background: "var(--ai-d)", color: "var(--ai)",

@@ -49,6 +49,7 @@ export default function StockModal({ ticker, onClose }) {
 
   const s  = data?.stock;
   const news = data?.news ?? [];
+  const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
   const bd = s?.breakdown ?? {};
   const ai = s?.aiAnalysis;
@@ -113,6 +114,31 @@ export default function StockModal({ ticker, onClose }) {
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
               <SignalGauge score={s.score ?? 0} signal={s.signal} size={120} />
             </div>
+
+            {/* Score history */}
+            {history.length > 1 && (
+              <>
+                <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>Score History</div>
+                <div style={{ height: 140, marginBottom: 20 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={history} margin={{ top: 4, right: 6, bottom: 0, left: -20 }}>
+                      <defs>
+                        <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={sc} stopOpacity={0.35} />
+                          <stop offset="100%" stopColor={sc} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="time" tick={{ fill: "var(--muted)", fontSize: 10 }} tickLine={false} axisLine={false} minTickGap={24} />
+                      <YAxis domain={[0, 1]} tickFormatter={(v) => Math.round(v * 100)} tick={{ fill: "var(--muted)", fontSize: 10 }} tickLine={false} axisLine={false} width={34} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <ReferenceLine y={0.65} stroke="var(--buy)" strokeDasharray="3 3" strokeOpacity={0.4} />
+                      <ReferenceLine y={0.45} stroke="var(--sell)" strokeDasharray="3 3" strokeOpacity={0.4} />
+                      <Area type="monotone" dataKey="score" stroke={sc} strokeWidth={2} fill="url(#scoreFill)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
 
             {/* AI Analysis */}
             {ai && (

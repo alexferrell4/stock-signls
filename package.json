@@ -1,13 +1,15 @@
 {
-  "name": "stock-signals-react",
+  "name": "trendline",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.js",
-    "start": "concurrently \"node server.js\" \"vite\""
+    "start": "concurrently \"node server.js\" \"vite\"",
+    "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

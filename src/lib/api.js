@@ -25,3 +25,13 @@ export async function sendChatMessage(ticker, message, history) {
   });
   return res.json();
 }
+
+// Portfolio-level advisor: "what should I buy / hold / sell?"
+export async function askAdvisor(message, history) {
+  const res = await fetch(`${BASE}/advisor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+  return res.json();
+}

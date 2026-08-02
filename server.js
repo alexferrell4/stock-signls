@@ -1,117 +1,162 @@
+// ─── Trendline API server ───────────────────────────────────────
+// Express backend that runs the signal pipeline and serves the React app.
+//
+// Modes (env):
+//   DATA_MODE = mock (default) | live      — market data source
+//   AI_MODE   = mock (default) | live      — Claude analysis/chat/advisor
+//
+// Mock is the default everywhere, so `node server.js` and the whole test
+// suite run with ZERO API keys and ZERO credit spend. Flip to live only
+// when you want real markets: DATA_MODE=live AI_MODE=live node server.js
+
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
+import { makeProvider } from "./src/server/providers/index.js";
+import { makeAI } from "./src/server/ai.js";
+import { createStore } from "./src/server/store.js";
+import { UNIVERSE, TICKERS, companyName } from "./src/server/universe.js";
+
 dotenv.config();
 
-const app = express();
-const PORT = 3000;
-
-// ─── FIX __dirname (ES MODULE FIX) ─────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ─── YOUR API KEYS ──────────────────────────────────────────────
-// IMPORTANT: backend must use process.env (NOT import.meta.env)
-const CONFIG = {
-  FINNHUB_KEY: process.env.FINNHUB_KEY,
-  NEWS_API_KEY: process.env.NEWS_API_KEY,
-  CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
-};
+// ─── Build the app (exported for tests) ─────────────────────────
+export function buildApp(env = process.env) {
+  const provider = makeProvider(env);
+  const ai = makeAI(env);
+  const { store, refreshAll } = createStore({ provider, ai });
 
-// ─── Ticker Universe ────────────────────────────────────────────
-const TICKERS = {
-  AAPL: "Apple", MSFT: "Microsoft", TSLA: "Tesla",
-  GOOGL: "Google", AMZN: "Amazon", META: "Meta",
-  NVDA: "Nvidia", AMD: "AMD", NFLX: "Netflix",
-  COIN: "Coinbase", PLTR: "Palantir", SOFI: "SoFi",
-  RIVN: "Rivian", SMCI: "Super Micro", MSTR: "MicroStrategy",
-};
+  const REFRESH_MIN = Number(env.REFRESH_MINUTES ?? 5);
+  const spacingMs = provider.mode === "live" ? 1100 : 0; // rate-limit live calls
 
-// ─── In-memory store ────────────────────────────────────────────
-let store = {
-  stocks: {},
-  news: {},
-  lastUpdated: null,
-  nextUpdate: null,
-};
+  const app = express();
+  app.use(express.json());
 
-// ─── Helpers ────────────────────────────────────────────────────
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Health / status — standard for any deployable service.
+  app.get("/api/health", (req, res) => {
+    res.json({
+      ok: true,
+      dataMode: provider.mode,
+      aiMode: ai.mode,
+      tracking: TICKERS.length,
+      lastUpdated: store.lastUpdated,
+      lastError: store.lastError,
+    });
+  });
 
-const POS = ["beat","surge","rally","record","upgrade","buy","strong","growth","profit","gain","positive","bullish","outperform","exceed","rises","high","soars","jumps","boosts"];
-const NEG = ["miss","plunge","fall","drop","downgrade","sell","weak","loss","losses","decline","negative","bearish","underperform","below","cut","layoff","recall","lawsuit","fine","crash","slump","warns"];
+  // Universe metadata (symbols + company names) for client-side search.
+  app.get("/api/meta", (req, res) => {
+    res.json({ universe: UNIVERSE, tickers: TICKERS, refreshMinutes: REFRESH_MIN, dataMode: provider.mode });
+  });
 
-function scoreText(text) {
-  if (!text) return 0;
-  let score = 0;
-  for (const w of text.toLowerCase().split(/\W+/)) {
-    if (POS.includes(w)) score += 0.15;
-    if (NEG.includes(w)) score -= 0.15;
+  // Symbol/company search across the tracked universe.
+  app.get("/api/search", (req, res) => {
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    if (!q) return res.json({ results: [] });
+    const results = TICKERS.filter(
+      (t) => t.toLowerCase().includes(q) || companyName(t).toLowerCase().includes(q)
+    ).map((t) => ({ ticker: t, company: companyName(t), stock: store.stocks[t] ?? null }));
+    res.json({ results });
+  });
+
+  // All signals, best score first.
+  app.get("/api/stocks", (req, res) => {
+    res.json({
+      stocks: Object.values(store.stocks).sort((a, b) => b.score - a.score),
+      lastUpdated: store.lastUpdated,
+      nextUpdate: store.nextUpdate,
+      dataMode: provider.mode,
+    });
+  });
+
+  // One stock + its news + intraday score history (feeds the modal).
+  app.get("/api/stocks/:ticker", (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    const stock = store.stocks[ticker];
+    if (!stock) return res.status(404).json({ error: `No data for ${ticker}` });
+    res.json({ stock, news: store.news[ticker] ?? [], history: store.history[ticker] ?? [] });
+  });
+
+  // Manual refresh. Returns immediately; the polling client picks up new data.
+  app.post("/api/refresh", (req, res) => {
+    if (!store.refreshing) {
+      refreshAll({ spacingMs }).then(() => {
+        store.nextUpdate = new Date(Date.now() + REFRESH_MIN * 60_000).toISOString();
+      });
+    }
+    res.json({ ok: true, refreshing: true });
+  });
+
+  // Per-ticker chat.
+  app.post("/api/chat/:ticker", async (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    const { message, history } = req.body ?? {};
+    if (!message) return res.status(400).json({ error: "message required" });
+    try {
+      const out = await ai.chat({ ticker, stock: store.stocks[ticker], message, history });
+      res.json(out);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Portfolio advisor — "what should I buy / hold / sell?" over the board.
+  app.post("/api/advisor", async (req, res) => {
+    const { message, history } = req.body ?? {};
+    if (!message) return res.status(400).json({ error: "message required" });
+    const stocks = Object.values(store.stocks);
+    if (!stocks.length) return res.json({ reply: "No signals loaded yet — try refreshing first.", model: ai.mode });
+    try {
+      const out = await ai.advise({ stocks, message, history });
+      res.json(out);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Serve the built frontend in production (dist/), if present.
+  const distDir = path.join(__dirname, "dist");
+  if (fs.existsSync(distDir)) {
+    app.use(express.static(distDir));
+    app.get("*", (req, res) => res.sendFile(path.join(distDir, "index.html")));
   }
-  return Math.max(-1, Math.min(1, score));
+
+  return { app, store, refreshAll, provider, ai, REFRESH_MIN, spacingMs };
 }
 
-// ─── Signal Engine ──────────────────────────────────────────────
-function computeSignal({ changePercent=0, currentVolume=0, avgVolume=0, sentimentScore=0, newsItems=[] }) {
-  const momentum = (Math.max(-10, Math.min(10, changePercent)) + 10) / 20;
-  const volumeSpike = avgVolume > 0 ? Math.min(1, (currentVolume / avgVolume) / 2) : 0.5;
-  const sentiment = (Math.max(-1, Math.min(1, sentimentScore)) + 1) / 2;
-  const newsAvg = newsItems.length ? newsItems.reduce((s,n) => s + n.sentiment, 0) / newsItems.length : 0;
-  const newsImpact = (Math.max(-1, Math.min(1, newsAvg)) + 1) / 2;
-
-  const score = 0.4*momentum + 0.3*sentiment + 0.2*volumeSpike + 0.1*newsImpact;
-  const rounded = Math.round(score * 100) / 100;
-
-  const signal = rounded >= 0.65 ? "BUY" : rounded >= 0.45 ? "HOLD" : "SELL";
-
-  return {
-    score: rounded,
-    signal,
-    breakdown: {
-      momentum: Math.round(momentum*100)/100,
-      sentiment: Math.round(sentiment*100)/100,
-      volumeSpike: Math.round(volumeSpike*100)/100,
-      newsImpact: Math.round(newsImpact*100)/100,
-    },
-    reason: "computed signals",
-  };
+// ─── Scheduler ──────────────────────────────────────────────────
+// Refreshes on an interval. Market-hours aware so live mode doesn't burn
+// API calls overnight; mock mode always refreshes so the demo stays lively.
+function isUsMarketOpen(date = new Date()) {
+  // Convert to US/Eastern via locale trick.
+  const et = new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay(); // 0 Sun .. 6 Sat
+  if (day === 0 || day === 6) return false;
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return mins >= 9 * 60 + 30 && mins <= 16 * 60; // 9:30–16:00 ET
 }
 
-// ─── FINNHUB ────────────────────────────────────────────────────
-async function finnhubQuote(ticker, fetch) {
-  const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${CONFIG.FINNHUB_KEY}`);
-  const d = await res.json();
+// ─── Start (skipped when imported by tests) ─────────────────────
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  const PORT = Number(process.env.PORT ?? 3000);
+  const { app, store, refreshAll, provider, ai, REFRESH_MIN, spacingMs } = buildApp();
 
-  return {
-    price: Math.round((d.c ?? 0) * 100) / 100,
-    changePercent: d.pc ? ((d.c - d.pc) / d.pc) * 100 : 0,
-    high: d.h ?? 0,
-    low: d.l ?? 0,
-    open: d.o ?? 0,
-  };
+  app.listen(PORT, async () => {
+    console.log(`Trendline API on http://localhost:${PORT}  [data:${provider.mode} ai:${ai.mode}]`);
+    // Initial load so the UI isn't empty on boot.
+    await refreshAll({ spacingMs });
+    store.nextUpdate = new Date(Date.now() + REFRESH_MIN * 60_000).toISOString();
+
+    setInterval(async () => {
+      if (provider.mode === "live" && !isUsMarketOpen()) return;
+      await refreshAll({ spacingMs });
+      store.nextUpdate = new Date(Date.now() + REFRESH_MIN * 60_000).toISOString();
+    }, REFRESH_MIN * 60_000);
+  });
 }
-
-// (rest of your Finnhub, NewsAPI, Claude code stays EXACTLY the same)
-// I did NOT remove your logic — only fixed runtime-breaking parts above
-
-// ─── ROUTES ─────────────────────────────────────────────────────
-app.use(express.json());
-
-app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "index.html"))
-);
-
-app.get("/api/stocks", (req, res) =>
-  res.json({
-    stocks: Object.values(store.stocks).sort((a,b) => b.score - a.score),
-    lastUpdated: store.lastUpdated,
-    nextUpdate: store.nextUpdate,
-  })
-);
-
-// ─── START ───────────────────────────────────────────────────────
-app.listen(PORT, async () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
