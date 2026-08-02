@@ -64,10 +64,14 @@ export function buildApp(env = process.env) {
     res.json({ results });
   });
 
-  // All signals, best score first.
+  // All signals, best score first. Each carries a short `spark` series
+  // (recent score history) so cards/rows can render a sparkline.
   app.get("/api/stocks", (req, res) => {
+    const stocks = Object.values(store.stocks)
+      .map((s) => ({ ...s, spark: (store.history[s.ticker] ?? []).map((h) => h.score) }))
+      .sort((a, b) => b.score - a.score);
     res.json({
-      stocks: Object.values(store.stocks).sort((a, b) => b.score - a.score),
+      stocks,
       lastUpdated: store.lastUpdated,
       nextUpdate: store.nextUpdate,
       dataMode: provider.mode,

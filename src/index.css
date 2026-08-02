@@ -1,6 +1,6 @@
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg:      #080D1A;
+  --bg:      #070B15;
   --surf:    #0F1628;
   --surf2:   #162035;
   --surf3:   #1C2A42;
@@ -21,6 +21,9 @@
   --dim:     #7A95B8;
   --mono:    "JetBrains Mono", monospace;
   --sans:    "Space Grotesk", sans-serif;
+  --shadow:  0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --radius:  12px;
 }
 
 /* ─── Reset ──────────────────────────────────────────────────────────────────── */
@@ -34,17 +37,31 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Ambient depth — soft brand glows anchored to the top of the page. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(680px circle at 12% -8%, rgba(79, 142, 247, 0.10), transparent 60%),
+    radial-gradient(720px circle at 88% -12%, rgba(167, 139, 250, 0.10), transparent 60%),
+    radial-gradient(900px circle at 50% 120%, rgba(0, 212, 160, 0.05), transparent 55%);
+}
+#root { position: relative; z-index: 1; }
+
 /* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
 
 /* ─── Skeleton shimmer ───────────────────────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
 .skeleton {
   background: linear-gradient(90deg, var(--surf) 25%, var(--surf2) 50%, var(--surf) 75%);
   background-size: 200% 100%;
@@ -52,12 +69,35 @@ body {
   border-radius: 6px;
 }
 
-/* ─── Pulse animation ────────────────────────────────────────────────────────── */
+/* ─── Animations ─────────────────────────────────────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.35; transform: scale(0.65); }
+  50%      { opacity: 0.35; transform: scale(0.65); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.fade-in { animation: fadeIn 0.25s ease both; }
+
+/* Subtle sheen used on accent chips/badges. */
+@keyframes sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

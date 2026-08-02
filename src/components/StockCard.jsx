@@ -1,4 +1,5 @@
 import SignalGauge from "./SignalGauge";
+import Sparkline from "./Sparkline";
 import { COMPANY } from "./Navbar";
 
 const f$  = p => p != null ? `$${Number(p).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
@@ -7,7 +8,7 @@ const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" 
 const sigDim   = s => s === "BUY" ? "var(--buy-d)" : s === "SELL" ? "var(--sell-d)" : "var(--hold-d)";
 
 export default function StockCard({ stock, onClick }) {
-  const { ticker, price, changePercent, signal, score, breakdown, reason, volume, aiAnalysis } = stock;
+  const { ticker, price, changePercent, signal, score, breakdown, reason, volume, aiAnalysis, spark } = stock;
   const sc  = sigColor(signal);
   const bd  = breakdown ?? {};
   const chg = changePercent ?? 0;
@@ -67,7 +68,10 @@ export default function StockCard({ stock, onClick }) {
           {chg > 0 ? "+" : ""}{chg.toFixed(2)}%
         </span>
       </div>
-      <div style={{ fontSize: ".65rem", color: "var(--muted)", marginBottom: 10 }}>Vol {fv(volume)}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: ".65rem", color: "var(--muted)" }}>Vol {fv(volume)}</span>
+        <Sparkline data={spark ?? []} color={sc} width={78} height={22} />
+      </div>
 
       {/* Breakdown bars */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5, borderTop: "1px solid var(--border)", paddingTop: 9 }}>

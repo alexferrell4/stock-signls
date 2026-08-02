@@ -9,8 +9,18 @@ const COMPANY = {
 
 export { COMPANY };
 
+// Rough US market-hours check (9:30–16:00 ET, Mon–Fri) for the status pill.
+function marketStatus() {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay();
+  const mins = et.getHours() * 60 + et.getMinutes();
+  const open = day >= 1 && day <= 5 && mins >= 570 && mins <= 960;
+  return open ? { label: "Markets Open", color: "var(--buy)" } : { label: "Markets Closed", color: "var(--muted)" };
+}
+
 export default function Navbar({ nextUpdate, onRefresh, refreshing }) {
   const time = useClock();
+  const mkt = marketStatus();
 
   const minsLeft = nextUpdate
     ? Math.max(0, Math.round((new Date(nextUpdate) - Date.now()) / 60000))
@@ -42,7 +52,11 @@ export default function Navbar({ nextUpdate, onRefresh, refreshing }) {
         </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 20, fontSize: ".72rem", color: "var(--muted)", fontFamily: "var(--mono)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: ".72rem", color: "var(--muted)", fontFamily: "var(--mono)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 7, color: "var(--dim)" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: mkt.color, boxShadow: `0 0 6px ${mkt.color}` }} />
+          {mkt.label}
+        </span>
         {minsLeft !== null && (
           <span style={{ color: "var(--dim)" }}>
             Next update ~{minsLeft}m
