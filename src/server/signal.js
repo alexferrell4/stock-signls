@@ -69,32 +69,104 @@ export function computeSignal({
     newsImpact: round2(newsImpact),
   };
 
+  const newsCount = newsItems.length;
+
+  // Structured, auditable decomposition. Every component reports the points
+  // it adds to the 0–100 score, how far that is from a neutral baseline (50),
+  // and the raw driver behind it. This is the source of truth for the UI's
+  // "why this score" panel and for grounding the AI analysis.
+  const explanation = buildExplanation({
+    parts: { momentum, sentiment, volumeSpike, newsImpact },
+    raw: { changePercent, volRatio, sentimentScore, newsAvg, newsCount, avgVolume },
+    score,
+  });
+
   return {
     score,
     signal: signalFromScore(score),
     breakdown,
-    // Point contribution of each component toward the 0–100 score, so the
-    // UI can say *why* a stock scored the way it did (Phase 1 groundwork).
-    contributions: {
-      momentum: Math.round(WEIGHTS.momentum * momentum * 100),
-      sentiment: Math.round(WEIGHTS.sentiment * sentiment * 100),
-      volumeSpike: Math.round(WEIGHTS.volumeSpike * volumeSpike * 100),
-      newsImpact: Math.round(WEIGHTS.newsImpact * newsImpact * 100),
-    },
-    reason: explain({ changePercent, volRatio, sentimentScore, newsAvg, newsCount: newsItems.length }),
+    // Point contribution of each component toward the 0–100 score.
+    contributions: Object.fromEntries(
+      explanation.components.map((c) => [c.key, c.points])
+    ),
+    explanation,
+    reason: explanation.reason,
   };
 }
 
-// Human-readable one-liner explaining the dominant drivers.
-function explain({ changePercent, volRatio, sentimentScore, newsAvg, newsCount }) {
-  const parts = [];
-  if (changePercent >= 1) parts.push(`up ${changePercent.toFixed(1)}% today`);
-  else if (changePercent <= -1) parts.push(`down ${Math.abs(changePercent).toFixed(1)}% today`);
-  if (volRatio >= 1.5) parts.push(`volume ${volRatio.toFixed(1)}× average`);
-  else if (volRatio > 0 && volRatio <= 0.6) parts.push(`thin volume (${volRatio.toFixed(1)}× avg)`);
-  if (sentimentScore >= 0.15) parts.push("positive analyst sentiment");
-  else if (sentimentScore <= -0.15) parts.push("negative analyst sentiment");
-  if (newsCount && newsAvg >= 0.1) parts.push("upbeat headlines");
-  else if (newsCount && newsAvg <= -0.1) parts.push("negative headlines");
-  return parts.length ? parts.join(", ") : "mixed / neutral signals";
+const NEUTRAL = 0.5;
+
+// Builds the per-component explanation array + a one-line summary.
+function buildExplanation({ parts, raw, score }) {
+  const meta = {
+    momentum: {
+      label: "Momentum",
+      weight: WEIGHTS.momentum,
+      detail: `${raw.changePercent >= 0 ? "+" : ""}${raw.changePercent.toFixed(2)}% today`,
+      up: "rising price", down: "falling price",
+    },
+    sentiment: {
+      label: "Sentiment",
+      weight: WEIGHTS.sentiment,
+      detail: `analyst sentiment ${raw.sentimentScore >= 0 ? "+" : ""}${raw.sentimentScore.toFixed(2)}`,
+      up: "positive sentiment", down: "negative sentiment",
+    },
+    volumeSpike: {
+      label: "Volume",
+      weight: WEIGHTS.volumeSpike,
+      detail: raw.avgVolume > 0 ? `${raw.volRatio.toFixed(1)}× avg volume` : "no volume data",
+      up: "elevated volume", down: "thin volume",
+    },
+    newsImpact: {
+      label: "News",
+      weight: WEIGHTS.newsImpact,
+      detail: raw.newsCount
+        ? `${raw.newsCount} headline${raw.newsCount > 1 ? "s" : ""}, avg ${raw.newsAvg >= 0 ? "+" : ""}${raw.newsAvg.toFixed(2)}`
+        : "no headlines",
+      up: "upbeat headlines", down: "negative headlines",
+    },
+  };
+
+  const components = Object.entries(parts).map(([key, v]) => {
+    const m = meta[key];
+    const points = Math.round(m.weight * v * 100);           // toward the 0–100 score
+    const delta = Math.round(m.weight * (v - NEUTRAL) * 100); // vs neutral baseline
+    const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+    return {
+      key,
+      label: m.label,
+      weightPct: Math.round(m.weight * 100),
+      normalized: Math.round(v * 100), // 0–100 strength of this component
+      points,
+      delta,
+      direction,
+      detail: m.detail,
+      phrase: direction === "up" ? m.up : direction === "down" ? m.down : "neutral",
+    };
+  });
+
+  // Strongest movers away from neutral, most significant first.
+  const movers = components
+    .filter((c) => Math.abs(c.delta) >= 2)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 3);
+
+  // summary = point-annotated (for the "why this score" panel / advisor).
+  const summary = movers.length
+    ? movers.map((c) => `${c.detail} (${c.delta >= 0 ? "+" : ""}${c.delta} pts)`).join(", ")
+    : "mixed / neutral signals";
+
+  // reason = clean phrasing (for compact card display).
+  const reason = movers.length
+    ? movers.map((c) => c.phrase).join(", ")
+    : "mixed / neutral signals";
+
+  return {
+    base: 50,
+    total: Math.round(score * 100),
+    net: Math.round(score * 100) - 50, // points above/below neutral
+    components,
+    summary,
+    reason,
+  };
 }

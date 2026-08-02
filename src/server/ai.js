@@ -25,9 +25,12 @@ function mockAI() {
   async function generateAnalysis({ ticker, company, quote, signal, news }) {
     const dir = signal.signal === "BUY" ? "constructive" : signal.signal === "SELL" ? "cautious" : "neutral";
     const chg = quote.changePercent;
+    const ex = signal.explanation;
+    const netTxt = ex ? `, net ${ex.net >= 0 ? "+" : ""}${ex.net} vs a neutral 50` : "";
+    const drivers = ex ? ex.summary : signal.reason;
     const summary =
-      `${company} (${ticker}) scores ${Math.round(signal.score * 100)}/100 — a ${signal.signal} signal. ` +
-      `The model is ${dir} here: ${signal.reason}. ` +
+      `${company} (${ticker}) scores ${Math.round(signal.score * 100)}/100${netTxt} — a ${signal.signal} signal. ` +
+      `The model is ${dir} here, driven by ${drivers}. ` +
       `Price is ${chg >= 0 ? "up" : "down"} ${Math.abs(chg).toFixed(2)}% on the session.`;
     const keyRisk =
       signal.signal === "SELL"
@@ -105,10 +108,15 @@ function liveAI({ apiKey, fetchImpl = fetch }) {
       `You are Trendline's equity signal analyst. Be concise and factual. ` +
       `Always frame output as informational, not personalized financial advice.`;
     const headlines = news.slice(0, 5).map((n) => `- ${n.headline} (${n.source})`).join("\n");
+    const breakdown = (signal.explanation?.components ?? [])
+      .map((c) => `  ${c.label} (${c.weightPct}%): ${c.points} pts, ${c.delta >= 0 ? "+" : ""}${c.delta} vs neutral — ${c.detail}`)
+      .join("\n");
     const prompt =
       `Stock: ${company} (${ticker})\nPrice: $${quote.price} (${quote.changePercent}% today)\n` +
-      `Model signal: ${signal.signal} at ${Math.round(signal.score * 100)}/100\n` +
-      `Drivers: ${signal.reason}\nRecent headlines:\n${headlines}\n\n` +
+      `Model signal: ${signal.signal} at ${Math.round(signal.score * 100)}/100 ` +
+      `(net ${signal.explanation?.net ?? 0} vs neutral 50)\n` +
+      `Score decomposition:\n${breakdown}\nRecent headlines:\n${headlines}\n\n` +
+      `Explain the signal grounded ONLY in this decomposition. ` +
       `Respond as JSON: {"summary": "...", "confidence": "High|Medium|Low", "keyRisk": "..."}`;
     try {
       const text = await callClaude({ system, messages: [{ role: "user", content: prompt }], maxTokens: 512 });

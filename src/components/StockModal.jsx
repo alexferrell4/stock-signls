@@ -52,6 +52,7 @@ export default function StockModal({ ticker, onClose }) {
   const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
   const bd = s?.breakdown ?? {};
+  const ex = s?.explanation;
   const ai = s?.aiAnalysis;
   const chg = s?.changePercent ?? 0;
 
@@ -162,24 +163,38 @@ export default function StockModal({ ticker, onClose }) {
               </>
             )}
 
-            {/* Score Breakdown */}
-            <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>Score Breakdown</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 20 }}>
-              {[
-                { label: "Momentum (40%)",     key: "momentum" },
-                { label: "Sentiment (30%)",    key: "sentiment" },
-                { label: "Volume spike (20%)", key: "volumeSpike" },
-                { label: "News impact (10%)",  key: "newsImpact" },
-              ].map(({ label, key }) => {
-                const val = bd[key] ?? 0;
+            {/* Why this score — auditable decomposition */}
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>Why this score</span>
+              {ex && (
+                <span style={{ fontSize: ".68rem", fontFamily: "var(--mono)", color: "var(--muted)" }}>
+                  neutral 50 <span style={{ color: ex.net >= 0 ? "var(--buy)" : "var(--sell)", fontWeight: 700 }}>{ex.net >= 0 ? "+" : ""}{ex.net}</span> = <span style={{ color: sc, fontWeight: 700 }}>{ex.total}</span>
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 20 }}>
+              {(ex?.components ?? [
+                { key: "momentum", label: "Momentum", weightPct: 40, normalized: Math.round((bd.momentum ?? 0) * 100), delta: 0, detail: "" },
+                { key: "sentiment", label: "Sentiment", weightPct: 30, normalized: Math.round((bd.sentiment ?? 0) * 100), delta: 0, detail: "" },
+                { key: "volumeSpike", label: "Volume", weightPct: 20, normalized: Math.round((bd.volumeSpike ?? 0) * 100), delta: 0, detail: "" },
+                { key: "newsImpact", label: "News", weightPct: 10, normalized: Math.round((bd.newsImpact ?? 0) * 100), delta: 0, detail: "" },
+              ]).map((c) => {
+                const deltaColor = c.delta > 0 ? "var(--buy)" : c.delta < 0 ? "var(--sell)" : "var(--muted)";
                 return (
-                  <div key={key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".72rem", color: "var(--dim)", marginBottom: 4 }}>
-                      <span>{label}</span>
-                      <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>{Math.round(val * 100)}</span>
+                  <div key={c.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: ".72rem", color: "var(--dim)", marginBottom: 4 }}>
+                      <span>{c.label} <span style={{ color: "var(--muted)", fontSize: ".64rem" }}>({c.weightPct}%)</span></span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ color: "var(--muted)", fontSize: ".66rem" }}>{c.detail}</span>
+                        <span style={{
+                          fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".68rem",
+                          padding: "1px 6px", borderRadius: 4, color: deltaColor,
+                          background: c.delta > 0 ? "var(--buy-d)" : c.delta < 0 ? "var(--sell-d)" : "var(--surf2)",
+                        }}>{c.delta >= 0 ? "+" : ""}{c.delta} pts</span>
+                      </span>
                     </div>
                     <div style={{ height: 4, background: "var(--surf2)", borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ height: "100%", borderRadius: 2, background: sc, width: `${Math.round(val * 100)}%`, transition: "width .5s" }} />
+                      <div style={{ height: "100%", borderRadius: 2, background: sc, width: `${c.normalized}%`, transition: "width .5s" }} />
                     </div>
                   </div>
                 );

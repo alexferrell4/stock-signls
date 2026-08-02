@@ -37,6 +37,38 @@ test("computeSignal handles empty input without throwing", () => {
   assert.equal(typeof r.reason, "string");
 });
 
+test("explanation decomposes the score into auditable components", () => {
+  const r = computeSignal({ changePercent: 4, currentVolume: 3e6, avgVolume: 1e6, sentimentScore: 0.5, newsItems: [{ sentiment: 0.4 }, { sentiment: 0.2 }] });
+  const ex = r.explanation;
+  assert.equal(ex.base, 50);
+  assert.equal(ex.total, Math.round(r.score * 100));
+  assert.equal(ex.net, ex.total - 50);
+  assert.equal(ex.components.length, 4);
+
+  // Points sum to the total score.
+  const sumPoints = ex.components.reduce((a, c) => a + c.points, 0);
+  assert.ok(Math.abs(sumPoints - ex.total) <= 1, `points ${sumPoints} ≈ total ${ex.total}`);
+
+  // Deltas (vs neutral) sum to net.
+  const sumDelta = ex.components.reduce((a, c) => a + c.delta, 0);
+  assert.ok(Math.abs(sumDelta - ex.net) <= 1, `deltas ${sumDelta} ≈ net ${ex.net}`);
+
+  // Each component is fully described.
+  for (const c of ex.components) {
+    assert.ok(c.label && c.detail && c.phrase);
+    assert.ok(["up", "down", "flat"].includes(c.direction));
+    assert.equal(typeof c.delta, "number");
+  }
+});
+
+test("explanation reflects direction of a bullish vs bearish stock", () => {
+  const bull = computeSignal({ changePercent: 8, currentVolume: 4e6, avgVolume: 1e6, sentimentScore: 0.7, newsItems: [{ sentiment: 0.6 }] });
+  const bear = computeSignal({ changePercent: -8, currentVolume: 5e5, avgVolume: 1e6, sentimentScore: -0.7, newsItems: [{ sentiment: -0.6 }] });
+  assert.ok(bull.explanation.net > 0 && bear.explanation.net < 0);
+  assert.equal(bull.explanation.components.find((c) => c.key === "momentum").direction, "up");
+  assert.equal(bear.explanation.components.find((c) => c.key === "momentum").direction, "down");
+});
+
 test("scoreText scores positive and negative lexicon", () => {
   assert.ok(scoreText("stock surges to record beat upgrade") > 0);
   assert.ok(scoreText("shares plunge on downgrade and lawsuit") < 0);
