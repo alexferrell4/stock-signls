@@ -144,7 +144,7 @@ export default function StockModal({ ticker, onClose }) {
             {/* AI Analysis */}
             {ai && (
               <>
-                <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>⬡ Claude AI Analysis</div>
+                <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>⬡ Enhanced Analysis</div>
                 <div style={{ background: "var(--ai-d)", border: "1px solid rgba(167,139,250,.2)", borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: ".7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".1em", color: "var(--ai)" }}>AI Analyst</span>
@@ -203,7 +203,7 @@ export default function StockModal({ ticker, onClose }) {
 
             {/* Chat */}
             <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>
-              Ask Claude about {ticker}
+              Ask about {ticker}
             </div>
             <ChatBox ticker={ticker} />
 

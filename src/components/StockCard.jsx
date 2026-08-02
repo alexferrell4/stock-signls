@@ -100,7 +100,7 @@ export default function StockCard({ stock, onClick }) {
           borderRadius: 7, fontSize: ".68rem", lineHeight: 1.45, color: "var(--dim)",
         }}>
           <div style={{ fontSize: ".58rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--ai)", marginBottom: 4, fontWeight: 600 }}>
-            ⬡ Claude AI
+            ⬡ Enhanced Analysis
           </div>
           {aiAnalysis.summary}
         </div>

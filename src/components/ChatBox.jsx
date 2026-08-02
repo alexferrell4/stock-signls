@@ -3,7 +3,7 @@ import { sendChatMessage } from "../lib/api";
 
 export default function ChatBox({ ticker }) {
   const [messages, setMessages] = useState([
-    { role: "system", content: `Ask anything about ${ticker} — Claude has the live data.` },
+    { role: "system", content: `Ask anything about ${ticker} — live signal data available.` },
   ]);
   const [input, setInput]     = useState("");
   const [sending, setSending] = useState(false);
