@@ -1,14 +1,18 @@
 // ─── In-memory Store + Refresh Pipeline ─────────────────────────
 // Holds the latest computed signals, news, and a short intraday score
-// history per ticker (feeds the modal chart). Phase 2 will persist this
-// to a database; the shape here is designed to port cleanly.
+// history per ticker (feeds the modal chart). Durable snapshots + the
+// historical track record are persisted via the injected `db` (SQLite).
 
 import { computeSignal, scoreText } from "./signal.js";
 import { companyName } from "./universe.js";
 
 const HISTORY_LEN = 60; // keep last N score points per ticker
 
-export function createStore({ provider, ai }) {
+// A no-op persistence layer so the store works with or without a DB
+// (e.g. Phase 0/1 tests that don't care about the track record).
+const NO_DB = { recordSnapshot() {}, evaluatePending() { return 0; } };
+
+export function createStore({ provider, ai, db = NO_DB }) {
   const store = {
     stocks: {},        // ticker -> enriched signal object
     news: {},          // ticker -> [news items]
@@ -79,16 +83,32 @@ export function createStore({ provider, ai }) {
     store.refreshing = true;
     store.lastError = null;
     try {
+      const prices = {};
       for (const ticker of provider.tickers) {
         try {
-          await refreshOne(ticker);
+          const s = await refreshOne(ticker);
+          prices[ticker] = s.price;
         } catch (e) {
           store.lastError = `${ticker}: ${e.message}`;
         }
         if (spacingMs) await new Promise((r) => setTimeout(r, spacingMs));
       }
+
+      // Track record: grade prior signals against these fresh prices FIRST,
+      // then record this cycle's signals (so they're graded next time).
+      const nowMs = Date.now();
+      const nowIso = new Date(nowMs).toISOString();
+      store.lastEvaluated = db.evaluatePending(prices, nowMs);
+      for (const ticker of Object.keys(prices)) {
+        const s = store.stocks[ticker];
+        db.recordSnapshot({
+          ticker, ts: nowIso, tsMs: nowMs,
+          price: s.price, score: s.score, signal: s.signal, changePercent: s.changePercent,
+        });
+      }
+
       provider.tick?.();
-      store.lastUpdated = new Date().toISOString();
+      store.lastUpdated = nowIso;
     } finally {
       store.refreshing = false;
     }

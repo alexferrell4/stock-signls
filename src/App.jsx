@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import Navbar, { COMPANY } from "./components/Navbar";
 import MarketPulse from "./components/MarketPulse";
+import TrackRecord from "./components/TrackRecord";
 import StockCard from "./components/StockCard";
 import StockTable from "./components/StockTable";
 import StockModal from "./components/StockModal";
@@ -73,6 +74,7 @@ export default function App() {
     <div style={{ minHeight: "100vh" }}>
       <Navbar nextUpdate={nextUpdate} onRefresh={refresh} refreshing={refreshing} />
       <MarketPulse summary={summary} stocks={stocks} lastUpdated={lastUpdated} />
+      <TrackRecord refreshing={refreshing} />
       <Advisor />
 
       {/* Toolbar */}

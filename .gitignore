@@ -10,6 +10,11 @@ node_modules
 dist
 dist-ssr
 
+# SQLite database (local track-record data)
+*.db
+*.db-wal
+*.db-shm
+
 # Logs
 *.log
 npm-debug.log*

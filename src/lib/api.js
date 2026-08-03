@@ -17,6 +17,12 @@ export async function triggerRefresh() {
   return res.json();
 }
 
+export async function fetchTrackRecord() {
+  const res = await fetch(`${BASE}/track-record`);
+  if (!res.ok) throw new Error("Failed to fetch track record");
+  return res.json();
+}
+
 export async function sendChatMessage(ticker, message, history) {
   const res = await fetch(`${BASE}/chat/${ticker}`, {
     method: "POST",

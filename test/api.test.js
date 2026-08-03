@@ -4,7 +4,7 @@ import { buildApp } from "../server.js";
 
 // Boot the real Express app in full mock mode on an ephemeral port and
 // exercise it over HTTP. No keys, no external network, no spend.
-const env = { DATA_MODE: "mock", AI_MODE: "mock", REFRESH_MINUTES: "5" };
+const env = { DATA_MODE: "mock", AI_MODE: "mock", REFRESH_MINUTES: "5", DB_PATH: ":memory:", EVAL_HORIZON_MS: "0" };
 
 let server, base, ctx;
 
@@ -25,11 +25,19 @@ const get = async (p) => (await fetch(base + p)).json();
 const post = async (p, body) =>
   (await fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
 
-test("GET /api/health reports mock modes", async () => {
+test("GET /api/health reports mock modes and persistence", async () => {
   const h = await get("/api/health");
   assert.equal(h.ok, true);
   assert.equal(h.dataMode, "mock");
   assert.equal(h.aiMode, "mock");
+  assert.equal(h.persistence, "sqlite");
+});
+
+test("GET /api/track-record returns a valid (possibly empty) shape", async () => {
+  const tr = await get("/api/track-record");
+  assert.equal(tr.enabled, true);
+  assert.ok(typeof tr.total === "number");
+  assert.ok(Array.isArray(tr.bySignal));
 });
 
 test("GET /api/stocks returns sorted signals", async () => {

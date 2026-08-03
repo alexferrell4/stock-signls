@@ -18,6 +18,7 @@ import dotenv from "dotenv";
 import { makeProvider } from "./src/server/providers/index.js";
 import { makeAI } from "./src/server/ai.js";
 import { createStore } from "./src/server/store.js";
+import { createDb } from "./src/server/db.js";
 import { UNIVERSE, TICKERS, companyName } from "./src/server/universe.js";
 
 dotenv.config();
@@ -29,7 +30,8 @@ const __dirname = path.dirname(__filename);
 export function buildApp(env = process.env) {
   const provider = makeProvider(env);
   const ai = makeAI(env);
-  const { store, refreshAll } = createStore({ provider, ai });
+  const db = createDb(env);
+  const { store, refreshAll } = createStore({ provider, ai, db });
 
   const REFRESH_MIN = Number(env.REFRESH_MINUTES ?? 5);
   const spacingMs = provider.mode === "live" ? 1100 : 0; // rate-limit live calls
@@ -43,6 +45,7 @@ export function buildApp(env = process.env) {
       ok: true,
       dataMode: provider.mode,
       aiMode: ai.mode,
+      persistence: db.enabled ? "sqlite" : "none",
       tracking: TICKERS.length,
       lastUpdated: store.lastUpdated,
       lastError: store.lastError,
@@ -84,6 +87,11 @@ export function buildApp(env = process.env) {
     const stock = store.stocks[ticker];
     if (!stock) return res.status(404).json({ error: `No data for ${ticker}` });
     res.json({ stock, news: store.news[ticker] ?? [], history: store.history[ticker] ?? [] });
+  });
+
+  // Historical track record — how the model's past signals have played out.
+  app.get("/api/track-record", (req, res) => {
+    res.json(db.getTrackRecord());
   });
 
   // Manual refresh. Returns immediately; the polling client picks up new data.
@@ -130,7 +138,7 @@ export function buildApp(env = process.env) {
     app.get("*", (req, res) => res.sendFile(path.join(distDir, "index.html")));
   }
 
-  return { app, store, refreshAll, provider, ai, REFRESH_MIN, spacingMs };
+  return { app, store, refreshAll, provider, ai, db, REFRESH_MIN, spacingMs };
 }
 
 // ─── Scheduler ──────────────────────────────────────────────────
