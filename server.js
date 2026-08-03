@@ -20,6 +20,7 @@ import { makeAI } from "./src/server/ai.js";
 import { createStore } from "./src/server/store.js";
 import { createDb } from "./src/server/db.js";
 import { buildPortfolio } from "./src/server/portfolio.js";
+import { makeAlertChannel } from "./src/server/alerts.js";
 import { UNIVERSE, TICKERS, companyName } from "./src/server/universe.js";
 
 dotenv.config();
@@ -32,7 +33,8 @@ export function buildApp(env = process.env) {
   const provider = makeProvider(env);
   const ai = makeAI(env);
   const db = createDb(env);
-  const { store, refreshAll } = createStore({ provider, ai, db });
+  const channel = makeAlertChannel(env);
+  const { store, refreshAll } = createStore({ provider, ai, db, channel });
 
   const REFRESH_MIN = Number(env.REFRESH_MINUTES ?? 5);
   const spacingMs = provider.mode === "live" ? 1100 : 0; // rate-limit live calls
@@ -117,6 +119,18 @@ export function buildApp(env = process.env) {
   app.delete("/api/portfolio/:ticker", (req, res) => {
     db.removeHolding(req.params.ticker.toUpperCase());
     res.json(buildPortfolio(db.listHoldings(), store.stocks));
+  });
+
+  // ── Alerts (Phase 4) ────────────────────────────────────────────
+  // Recent signal-transition alerts + unread count.
+  app.get("/api/alerts", (req, res) => {
+    res.json({ alerts: db.listAlerts(50), unread: db.unreadAlertCount(), channel: channel.mode });
+  });
+
+  // Mark all alerts as read.
+  app.post("/api/alerts/read", (req, res) => {
+    db.markAlertsRead();
+    res.json({ alerts: db.listAlerts(50), unread: 0 });
   });
 
   // Manual refresh. Returns immediately; the polling client picks up new data.

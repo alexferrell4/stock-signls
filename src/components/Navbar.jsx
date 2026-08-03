@@ -1,4 +1,5 @@
 import { useClock } from "../hooks/useClock";
+import AlertsBell from "./AlertsBell";
 
 const COMPANY = {
   AAPL:"Apple Inc.", MSFT:"Microsoft Corp.", TSLA:"Tesla Inc.", GOOGL:"Alphabet Inc.",
@@ -18,7 +19,7 @@ function marketStatus() {
   return open ? { label: "Markets Open", color: "var(--buy)" } : { label: "Markets Closed", color: "var(--muted)" };
 }
 
-export default function Navbar({ nextUpdate, onRefresh, refreshing }) {
+export default function Navbar({ nextUpdate, onRefresh, refreshing, onSelect }) {
   const time = useClock();
   const mkt = marketStatus();
 
@@ -63,6 +64,7 @@ export default function Navbar({ nextUpdate, onRefresh, refreshing }) {
           </span>
         )}
         <span>{time}</span>
+        <AlertsBell onSelect={onSelect} />
         <button
           onClick={onRefresh}
           disabled={refreshing}

@@ -46,6 +46,18 @@ export async function removeHolding(ticker) {
   return res.json();
 }
 
+export async function fetchAlerts() {
+  const res = await fetch(`${BASE}/alerts`);
+  if (!res.ok) throw new Error("Failed to fetch alerts");
+  return res.json();
+}
+
+export async function markAlertsRead() {
+  const res = await fetch(`${BASE}/alerts/read`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to mark alerts read");
+  return res.json();
+}
+
 export async function sendChatMessage(ticker, message, history) {
   const res = await fetch(`${BASE}/chat/${ticker}`, {
     method: "POST",

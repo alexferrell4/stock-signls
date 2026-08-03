@@ -82,7 +82,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <Navbar nextUpdate={nextUpdate} onRefresh={refresh} refreshing={refreshing} />
+      <Navbar nextUpdate={nextUpdate} onRefresh={refresh} refreshing={refreshing} onSelect={setSelected} />
 
       {/* Page tabs */}
       <div style={{ display: "flex", gap: 4, padding: "12px 28px 0" }}>

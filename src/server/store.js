@@ -5,14 +5,19 @@
 
 import { computeSignal, scoreText } from "./signal.js";
 import { companyName } from "./universe.js";
+import { detectAlerts } from "./alerts.js";
 
 const HISTORY_LEN = 60; // keep last N score points per ticker
 
-// A no-op persistence layer so the store works with or without a DB
-// (e.g. Phase 0/1 tests that don't care about the track record).
-const NO_DB = { recordSnapshot() {}, evaluatePending() { return 0; } };
+// No-op fallbacks so the store works with or without a DB / alert channel
+// (e.g. Phase 0/1 tests that don't care about persistence or alerting).
+const NO_DB = {
+  recordSnapshot() {}, evaluatePending() { return 0; },
+  listHoldings() { return []; }, recordAlert() { return 0; },
+};
+const NO_CHANNEL = { deliver() {} };
 
-export function createStore({ provider, ai, db = NO_DB }) {
+export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) {
   const store = {
     stocks: {},        // ticker -> enriched signal object
     news: {},          // ticker -> [news items]
@@ -83,6 +88,12 @@ export function createStore({ provider, ai, db = NO_DB }) {
     store.refreshing = true;
     store.lastError = null;
     try {
+      // Snapshot signals before this cycle overwrites them, so we can detect
+      // transitions (e.g. a held position flipping BUY → SELL) afterward.
+      const prevSignals = Object.fromEntries(
+        Object.values(store.stocks).map((s) => [s.ticker, s.signal])
+      );
+
       const prices = {};
       for (const ticker of provider.tickers) {
         try {
@@ -106,6 +117,15 @@ export function createStore({ provider, ai, db = NO_DB }) {
           price: s.price, score: s.score, signal: s.signal, changePercent: s.changePercent,
         });
       }
+
+      // Alerting: fire on any signal transition, prioritizing held positions.
+      const heldSet = new Set(db.listHoldings().map((h) => h.ticker));
+      const alerts = detectAlerts(prevSignals, store.stocks, heldSet, nowMs);
+      for (const a of alerts) {
+        db.recordAlert(a);
+        try { await channel.deliver(a); } catch { /* delivery is best-effort */ }
+      }
+      store.lastAlerts = alerts.length;
 
       provider.tick?.();
       store.lastUpdated = nowIso;

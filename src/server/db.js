@@ -37,6 +37,10 @@ function nullDb() {
     upsertHolding() {},
     removeHolding() {},
     listHoldings() { return []; },
+    recordAlert() { return 0; },
+    listAlerts() { return []; },
+    unreadAlertCount() { return 0; },
+    markAlertsRead() {},
     close() {},
   };
 }
@@ -79,6 +83,20 @@ export function createDb(env = process.env) {
       cost_basis REAL NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS alerts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts          TEXT NOT NULL,
+      ts_ms       INTEGER NOT NULL,
+      ticker      TEXT NOT NULL,
+      from_signal TEXT,
+      to_signal   TEXT NOT NULL,
+      held        INTEGER DEFAULT 0,
+      severity    TEXT NOT NULL,
+      message     TEXT NOT NULL,
+      read        INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts_ms DESC);
   `);
 
   const insert = db.prepare(
@@ -180,10 +198,41 @@ export function createDb(env = process.env) {
     return holdingList.all().map((h) => ({ ticker: h.ticker, shares: h.shares, costBasis: h.cost_basis, updatedAt: h.updated_at }));
   }
 
+  // ── Alerts (Phase 4) ──────────────────────────────────────────
+  const alertInsert = db.prepare(
+    `INSERT INTO alerts (ts, ts_ms, ticker, from_signal, to_signal, held, severity, message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const alertList = db.prepare(
+    `SELECT id, ts, ticker, from_signal, to_signal, held, severity, message, read
+     FROM alerts ORDER BY ts_ms DESC LIMIT ?`
+  );
+  const alertUnread = db.prepare(`SELECT COUNT(*) c FROM alerts WHERE read = 0`);
+  const alertMarkAll = db.prepare(`UPDATE alerts SET read = 1 WHERE read = 0`);
+
+  function recordAlert({ ts, tsMs, ticker, fromSignal, toSignal, held, severity, message }) {
+    const info = alertInsert.run(ts, tsMs, ticker, fromSignal ?? null, toSignal, held ? 1 : 0, severity, message);
+    return Number(info.lastInsertRowid);
+  }
+  function listAlerts(limit = 50) {
+    return alertList.all(limit).map((a) => ({
+      id: a.id, ts: a.ts, ticker: a.ticker,
+      fromSignal: a.from_signal, toSignal: a.to_signal,
+      held: !!a.held, severity: a.severity, message: a.message, read: !!a.read,
+    }));
+  }
+  function unreadAlertCount() {
+    return alertUnread.get().c;
+  }
+  function markAlertsRead() {
+    alertMarkAll.run();
+  }
+
   return {
     enabled: true,
     recordSnapshot, evaluatePending, getTrackRecord, getTickerHistory,
     upsertHolding, removeHolding, listHoldings,
+    recordAlert, listAlerts, unreadAlertCount, markAlertsRead,
     close: () => db.close(),
   };
   } catch (e) {

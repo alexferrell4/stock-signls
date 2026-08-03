@@ -98,6 +98,18 @@ test("portfolio: add, enrich, and remove a position", async () => {
   assert.ok(!after.positions.some((p) => p.ticker === "AAPL"));
 });
 
+test("GET /api/alerts returns a valid shape (in-app channel)", async () => {
+  const a = await get("/api/alerts");
+  assert.ok(Array.isArray(a.alerts));
+  assert.equal(typeof a.unread, "number");
+  assert.equal(a.channel, "inapp");
+});
+
+test("POST /api/alerts/read clears the unread count", async () => {
+  const r = await post("/api/alerts/read", {});
+  assert.equal(r.unread, 0);
+});
+
 test("POST /api/portfolio rejects unknown ticker and bad shares", async () => {
   const bad1 = await fetch(base + "/api/portfolio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticker: "ZZZZ", shares: 1, costBasis: 1 }) });
   assert.equal(bad1.status, 400);
