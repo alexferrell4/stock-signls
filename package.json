@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n api,ui -c blue,green \"node server.js\" \"vite\"",
+    "dev:ui": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.js",
-    "start": "concurrently \"node server.js\" \"vite\"",
+    "start": "concurrently -n api,ui -c blue,green \"node server.js\" \"vite\"",
     "app": "vite build && node server.js",
     "test": "node --test"
   },
