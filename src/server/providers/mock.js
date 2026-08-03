@@ -117,12 +117,31 @@ export function makeMockProvider() {
     };
   }
 
+  // Price series whose shape matches the timeframe: intraday for daily, a few
+  // days for weekly, ~a month for monthly. Random walk ending at `price`.
+  async function chartSeries(ticker, timeframe, price) {
+    const cfg = {
+      daily: { n: 52, dt: 7.5 * 60_000, vol: 0.004 },   // ~6.5h of 7.5-min bars
+      weekly: { n: 40, dt: 3 * 3600_000, vol: 0.011 },  // ~5 days of 3h bars
+      monthly: { n: 22, dt: 86_400_000, vol: 0.02 },    // ~1 month of daily
+    }[timeframe] ?? { n: 22, dt: 86_400_000, vol: 0.02 };
+
+    const r = rng(seedFor(ticker + timeframe + "chart") + cycle * 3);
+    const back = [];
+    let p = price || 100;
+    for (let i = 0; i < cfg.n; i++) { back.push(Math.round(p * 100) / 100); p = p * (1 + (r() - 0.5) * cfg.vol * 2); }
+    back.reverse();
+    const now = Date.now();
+    return back.map((close, i) => ({ t: now - (cfg.n - 1 - i) * cfg.dt, close }));
+  }
+
   return {
     mode: "mock",
     tickers: TICKERS,
     quote,
     news,
     changes,
+    chartSeries,
     // advance the drift so the next refresh looks different
     tick() { cycle += 1; },
   };

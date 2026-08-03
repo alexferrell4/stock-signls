@@ -4,11 +4,13 @@ import MarketPulse from "./components/MarketPulse";
 import TrackRecord from "./components/TrackRecord";
 import StockCard from "./components/StockCard";
 import StockTable from "./components/StockTable";
+import Heatmap from "./components/Heatmap";
 import StockModal from "./components/StockModal";
 import Advisor from "./components/Advisor";
 import Portfolio from "./components/Portfolio";
 import { useStocks } from "./hooks/useStocks";
 import { usePortfolio } from "./hooks/usePortfolio";
+import { useWatchlist } from "./hooks/useWatchlist";
 
 const FILTERS = ["ALL", "BUY", "HOLD", "SELL"];
 const FILTER_COLORS = { BUY: "var(--buy)", HOLD: "var(--hold)", SELL: "var(--sell)", ALL: "var(--text)" };
@@ -53,7 +55,9 @@ export default function App() {
   const [sortKey, setSortKey] = useState("score");
   const [sortDir, setSortDir] = useState("desc");
   const [view, setView] = useState("grid");
+  const [onlyWatch, setOnlyWatch] = useState(false);
   const [selectedTicker, setSelected] = useState(null);
+  const wl = useWatchlist();
 
   // Project each stock onto the selected timeframe: the timeframe's own
   // change %, score, signal, breakdown, explanation and analysis take over the
@@ -80,6 +84,7 @@ export default function App() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = tfStocks.filter((s) => (filter === "ALL" ? true : s.signal === filter));
+    if (onlyWatch) list = list.filter((s) => wl.has(s.ticker));
     if (q) list = list.filter((s) => s.ticker.toLowerCase().includes(q) || (COMPANY[s.ticker] ?? "").toLowerCase().includes(q));
     list = [...list].sort((a, b) => {
       if (sortKey === "ticker") {
@@ -89,7 +94,7 @@ export default function App() {
       return sortDir === "asc" ? av - bv : bv - av;
     });
     return list;
-  }, [tfStocks, filter, query, sortKey, sortDir]);
+  }, [tfStocks, filter, query, sortKey, sortDir, onlyWatch, wl]);
 
   const onSort = (key) => {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -177,6 +182,17 @@ export default function App() {
             {sortDir === "asc" ? "↑" : "↓"}
           </button>
 
+          {/* Watchlist toggle */}
+          <button onClick={() => setOnlyWatch((v) => !v)} title="Watchlist" style={{
+            display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8,
+            border: `1px solid ${onlyWatch ? "var(--hold)" : "var(--border2)"}`,
+            background: onlyWatch ? "var(--hold-d)" : "var(--surf)",
+            color: onlyWatch ? "var(--hold)" : "var(--muted)",
+            fontFamily: "var(--sans)", fontSize: ".74rem", fontWeight: 600, cursor: "pointer", transition: "all .15s",
+          }}>
+            {onlyWatch ? "★" : "☆"} {wl.count > 0 ? wl.count : ""}
+          </button>
+
           {/* Filter pills */}
           <div style={{ display: "flex", gap: 3, background: "var(--surf)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
             {FILTERS.map((f) => (
@@ -191,7 +207,7 @@ export default function App() {
 
           {/* View toggle */}
           <div style={{ display: "flex", gap: 3, background: "var(--surf)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-            {[["grid", "▦"], ["list", "☰"]].map(([v, icon]) => (
+            {[["grid", "▦"], ["list", "☰"], ["heatmap", "▧"]].map(([v, icon]) => (
               <button key={v} onClick={() => setView(v)} title={v}
                 style={{
                   padding: "5px 11px", border: "none", borderRadius: 5,
@@ -225,13 +241,15 @@ export default function App() {
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--muted)" }}>Try clearing the search or filter.</p>
         </div>
+      ) : view === "heatmap" ? (
+        <Heatmap stocks={visible} onSelect={setSelected} has={wl.has} onToggleStar={wl.toggle} />
       ) : view === "list" ? (
-        <StockTable stocks={visible} onSelect={setSelected} sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+        <StockTable stocks={visible} onSelect={setSelected} sortKey={sortKey} sortDir={sortDir} onSort={onSort} has={wl.has} onToggleStar={wl.toggle} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(285px, 1fr))", gap: 13, padding: "0 28px 48px" }}>
           {visible.map((stock, i) => (
             <div key={stock.ticker} className="fade-up" style={{ animationDelay: `${Math.min(i * 30, 400)}ms` }}>
-              <StockCard stock={stock} onClick={setSelected} />
+              <StockCard stock={stock} onClick={setSelected} starred={wl.has(stock.ticker)} onToggleStar={wl.toggle} />
             </div>
           ))}
         </div>

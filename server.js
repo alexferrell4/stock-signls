@@ -97,6 +97,16 @@ export function buildApp(env = process.env) {
     });
   });
 
+  // Price series for the modal chart, range matched to the timeframe
+  // (intraday / 5-day / 1-month). Fetched on demand so it's always fresh.
+  app.get("/api/stocks/:ticker/chart", async (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    const tf = ["daily", "weekly", "monthly"].includes(req.query.tf) ? req.query.tf : "daily";
+    const price = store.stocks[ticker]?.price ?? 0;
+    const series = provider.chartSeries ? await provider.chartSeries(ticker, tf, price) : [];
+    res.json({ ticker, timeframe: tf, series });
+  });
+
   // Historical track record — how the model's past signals have played out.
   app.get("/api/track-record", (req, res) => {
     res.json(db.getTrackRecord());

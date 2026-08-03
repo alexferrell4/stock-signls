@@ -12,6 +12,12 @@ export async function fetchStock(ticker) {
   return res.json();
 }
 
+export async function fetchChart(ticker, timeframe) {
+  const res = await fetch(`${BASE}/stocks/${ticker}/chart?tf=${timeframe}`);
+  if (!res.ok) throw new Error(`Failed to fetch chart for ${ticker}`);
+  return res.json();
+}
+
 export async function triggerRefresh() {
   const res = await fetch(`${BASE}/refresh`, { method: "POST" });
   return res.json();

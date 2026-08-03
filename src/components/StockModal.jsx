@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 import SignalGauge from "./SignalGauge";
 import ChatBox from "./ChatBox";
-import { fetchStock } from "../lib/api";
+import { fetchStock, fetchChart } from "../lib/api";
 import { COMPANY } from "./Navbar";
 
 const f$ = p => p != null ? `$${Number(p).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
@@ -41,6 +41,7 @@ function CustomTooltip({ active, payload }) {
 export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const [chart, setChart]   = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -60,13 +61,27 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [load, onClose]);
 
+  // Chart range follows the selected timeframe (intraday / 5-day / 1-month).
+  useEffect(() => {
+    let cancelled = false;
+    setChart([]);
+    fetchChart(ticker, timeframe)
+      .then((r) => { if (!cancelled) setChart(r.series ?? []); })
+      .catch(() => { if (!cancelled) setChart([]); });
+    return () => { cancelled = true; };
+  }, [ticker, timeframe]);
+
   // Project the selected timeframe over the stock (see App.jsx tfStocks).
   const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
   const news = data?.news ?? [];
-  const chartData = (data?.priceHistory ?? []).map((p) => ({
-    date: new Date(p.t).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    price: p.close,
-  }));
+  const fmtLabel = (t) => {
+    const d = new Date(t);
+    if (timeframe === "daily") return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (timeframe === "weekly") return d.toLocaleDateString("en-US", { weekday: "short" });
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+  const chartData = chart.map((p) => ({ date: fmtLabel(p.t), price: p.close }));
+  const chartTitle = timeframe === "daily" ? "Price — today" : timeframe === "weekly" ? "Price — past week" : "Price — past month";
   const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
   const bd = s?.breakdown ?? {};
@@ -134,7 +149,7 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
             {chartData.length > 1 && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>Price — last 30 days</span>
+                  <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>{chartTitle}</span>
                   <span style={{ fontSize: ".66rem", fontFamily: "var(--mono)", color: chg >= 0 ? "var(--buy)" : "var(--sell)" }}>
                     {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
                   </span>

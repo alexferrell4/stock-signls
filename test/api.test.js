@@ -59,6 +59,16 @@ test("GET /api/stocks/:ticker returns stock, news, history, timeframes", async (
   assert.ok(typeof d.priceHistory[0].close === "number" && typeof d.priceHistory[0].t === "number");
 });
 
+test("GET /api/stocks/:ticker/chart returns a timeframe-shaped series", async () => {
+  const day = await get("/api/stocks/AAPL/chart?tf=daily");
+  const month = await get("/api/stocks/AAPL/chart?tf=monthly");
+  assert.equal(day.timeframe, "daily");
+  assert.ok(Array.isArray(day.series) && day.series.length > 1);
+  assert.ok(typeof day.series[0].close === "number");
+  // intraday series has more points than the ~monthly series
+  assert.ok(day.series.length > month.series.length, "daily denser than monthly");
+});
+
 test("GET /api/stocks/:ticker 404s for unknown symbol", async () => {
   const res = await fetch(base + "/api/stocks/ZZZZ");
   assert.equal(res.status, 404);

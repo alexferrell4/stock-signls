@@ -7,7 +7,7 @@ const fv  = v => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3)
 const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" : "var(--hold)";
 const sigDim   = s => s === "BUY" ? "var(--buy-d)" : s === "SELL" ? "var(--sell-d)" : "var(--hold-d)";
 
-export default function StockCard({ stock, onClick }) {
+export default function StockCard({ stock, onClick, starred, onToggleStar }) {
   const { ticker, price, changePercent, signal, score, breakdown, reason, volume, aiAnalysis, spark } = stock;
   const sc  = sigColor(signal);
   const bd  = breakdown ?? {};
@@ -45,12 +45,23 @@ export default function StockCard({ stock, onClick }) {
           <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{ticker}</div>
           <div style={{ fontSize: ".65rem", color: "var(--muted)", marginTop: 2 }}>{COMPANY[ticker] ?? ticker}</div>
         </div>
-        <span style={{
-          padding: "3px 8px", borderRadius: 5, fontSize: ".67rem", fontWeight: 700, letterSpacing: ".06em",
-          background: sigDim(signal), color: sc,
-        }}>
-          {signal}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {onToggleStar && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStar(ticker); }}
+              title={starred ? "Unwatch" : "Add to watchlist"}
+              style={{
+                background: "transparent", border: "none", cursor: "pointer", padding: 0, lineHeight: 1,
+                fontSize: ".95rem", color: starred ? "var(--hold)" : "var(--muted)", opacity: starred ? 1 : 0.55,
+              }}>{starred ? "★" : "☆"}</button>
+          )}
+          <span style={{
+            padding: "3px 8px", borderRadius: 5, fontSize: ".67rem", fontWeight: 700, letterSpacing: ".06em",
+            background: sigDim(signal), color: sc,
+          }}>
+            {signal}
+          </span>
+        </div>
       </div>
 
       {/* Gauge */}

@@ -113,5 +113,30 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     return out;
   }
 
-  return { mode: "live", tickers: TICKERS, quote, news, changes, tick() {} };
+  // On-demand price series matching the timeframe, via Yahoo's chart endpoint
+  // with the appropriate range/interval. Returns [] on failure (UI hides chart).
+  async function chartSeries(ticker, timeframe) {
+    const [range, interval] = ({
+      daily: ["1d", "5m"],
+      weekly: ["5d", "30m"],
+      monthly: ["1mo", "1d"],
+    }[timeframe]) ?? ["1mo", "1d"];
+    try {
+      const res = await fetchImpl(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=${range}&interval=${interval}`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      );
+      const j = await res.json();
+      const r = j?.chart?.result?.[0];
+      const ts = r?.timestamp ?? [];
+      const cl = r?.indicators?.quote?.[0]?.close ?? [];
+      const series = [];
+      for (let i = 0; i < cl.length; i++) {
+        if (cl[i] != null) series.push({ t: ts[i] * 1000, close: round2(cl[i]) });
+      }
+      return series;
+    } catch { return []; }
+  }
+
+  return { mode: "live", tickers: TICKERS, quote, news, changes, chartSeries, tick() {} };
 }

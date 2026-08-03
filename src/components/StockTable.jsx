@@ -15,7 +15,7 @@ const COLS = [
 ];
 
 // Dense, sortable list view. Clicking a header sorts; clicking a row opens it.
-export default function StockTable({ stocks, onSelect, sortKey, sortDir, onSort }) {
+export default function StockTable({ stocks, onSelect, sortKey, sortDir, onSort, has, onToggleStar }) {
   return (
     <div style={{ padding: "0 28px 48px", overflowX: "auto" }}>
       <div style={{ minWidth: 640, border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", background: "var(--surf)" }}>
@@ -51,7 +51,13 @@ export default function StockTable({ stocks, onSelect, sortKey, sortDir, onSort 
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surf2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
               {/* Symbol */}
-              <div style={{ width: "22%", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: "22%", display: "flex", alignItems: "center", gap: 8 }}>
+                {onToggleStar && (
+                  <button onClick={(e) => { e.stopPropagation(); onToggleStar(s.ticker); }}
+                    title={has?.(s.ticker) ? "Unwatch" : "Watch"}
+                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, fontSize: ".85rem", lineHeight: 1, color: has?.(s.ticker) ? "var(--hold)" : "var(--muted)", opacity: has?.(s.ticker) ? 1 : 0.5 }}>
+                    {has?.(s.ticker) ? "★" : "☆"}</button>
+                )}
                 <span style={{ width: 3, height: 26, borderRadius: 2, background: c }} />
                 <div>
                   <div style={{ fontWeight: 700, fontSize: ".92rem" }}>{s.ticker}</div>

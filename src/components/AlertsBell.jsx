@@ -14,14 +14,40 @@ function ago(ts) {
 
 // Navbar bell: unread count badge + dropdown of recent signal-transition
 // alerts. Opening the panel marks everything read.
+const canNotify = () => typeof Notification !== "undefined";
+
 export default function AlertsBell({ onSelect }) {
   const [data, setData] = useState({ alerts: [], unread: 0 });
   const [open, setOpen] = useState(false);
+  const [notify, setNotify] = useState(canNotify() && Notification.permission === "granted");
   const ref = useRef(null);
+  const seen = useRef(new Set());
+  const firstLoad = useRef(true);
 
   const load = useCallback(async () => {
-    try { setData(await fetchAlerts()); } catch { /* server may be down */ }
-  }, []);
+    try {
+      const d = await fetchAlerts();
+      const alerts = d.alerts ?? [];
+      // Fire a desktop notification for genuinely new, high-priority alerts
+      // (held positions or downgrades). Skip the very first load (all "new").
+      if (!firstLoad.current && notify && canNotify() && Notification.permission === "granted") {
+        alerts
+          .filter((a) => !seen.current.has(a.id) && (a.severity === "high" || a.held))
+          .slice(0, 3)
+          .forEach((a) => { try { new Notification("Trendline signal", { body: a.message }); } catch { /* ignore */ } });
+      }
+      alerts.forEach((a) => seen.current.add(a.id));
+      firstLoad.current = false;
+      setData(d);
+    } catch { /* server may be down */ }
+  }, [notify]);
+
+  const toggleNotify = async () => {
+    if (!canNotify()) return;
+    if (Notification.permission === "granted") { setNotify((n) => !n); return; }
+    const p = await Notification.requestPermission();
+    setNotify(p === "granted");
+  };
 
   useEffect(() => {
     load();
@@ -74,7 +100,17 @@ export default function AlertsBell({ onSelect }) {
         }}>
           <div style={{ padding: "12px 15px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--dim)" }}>Alerts</span>
-            <span style={{ fontSize: ".62rem", color: "var(--muted)", fontFamily: "var(--mono)" }}>signal changes</span>
+            {canNotify() && (
+              <button onClick={toggleNotify} title="Desktop notifications for held/SELL alerts" style={{
+                display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 6,
+                border: `1px solid ${notify ? "var(--buy)" : "var(--border2)"}`,
+                background: notify ? "var(--buy-d)" : "transparent",
+                color: notify ? "var(--buy)" : "var(--muted)", cursor: "pointer",
+                fontFamily: "var(--sans)", fontSize: ".62rem", fontWeight: 600,
+              }}>
+                {notify ? "🔔 On" : "🔕 Notify"}
+              </button>
+            )}
           </div>
 
           {data.alerts.length === 0 ? (
