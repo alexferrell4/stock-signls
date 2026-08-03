@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "node server.js",
     "start": "concurrently \"node server.js\" \"vite\"",
+    "app": "vite build && node server.js",
     "test": "node --test"
   },
   "dependencies": {
