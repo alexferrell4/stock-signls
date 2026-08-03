@@ -48,12 +48,12 @@ export function createDb(env = process.env) {
   const holdBand = Number(env.HOLD_BAND ?? 1.0);      // % move that still counts as a good HOLD
   const horizonMs = Number(env.EVAL_HORIZON_MS ?? 0); // how long before a signal is graded
 
-  let db;
+  // The ENTIRE init is guarded: if the DB file can't be opened or set up
+  // (e.g. locked by OneDrive sync, corrupt, or read-only disk), we degrade
+  // to in-memory instead of crashing the whole API server. A dead track
+  // record is acceptable; a dead server ("cannot reach server") is not.
   try {
-    db = new DatabaseSync(path);
-  } catch {
-    return nullDb();
-  }
+  const db = new DatabaseSync(path);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS snapshots (
@@ -186,4 +186,8 @@ export function createDb(env = process.env) {
     upsertHolding, removeHolding, listHoldings,
     close: () => db.close(),
   };
+  } catch (e) {
+    console.warn(`[trendline] persistence disabled (${e.message}); running in-memory.`);
+    return nullDb();
+  }
 }

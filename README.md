@@ -18,7 +18,12 @@ npm start
 ```
 
 `npm start` runs the Express backend (port 3000) and the Vite dev server
-(port 5173) together. Open **http://localhost:5173**.
+(port **5280**) together. Open **http://localhost:5280**.
+
+> Trendline uses a dedicated port (5280) so it never shares a `localhost`
+> origin with other local apps. If you ever see "Connecting to the Trendline
+> API…", the backend (port 3000) isn't up yet — it will connect automatically
+> once `node server.js` is running.
 
 By default everything runs in **mock mode**: realistic synthetic prices,
 news, signals, chat, and advisor — **no API keys, no credits spent**. The
