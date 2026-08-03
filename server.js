@@ -19,6 +19,7 @@ import { makeProvider } from "./src/server/providers/index.js";
 import { makeAI } from "./src/server/ai.js";
 import { createStore } from "./src/server/store.js";
 import { createDb } from "./src/server/db.js";
+import { buildPortfolio } from "./src/server/portfolio.js";
 import { UNIVERSE, TICKERS, companyName } from "./src/server/universe.js";
 
 dotenv.config();
@@ -92,6 +93,30 @@ export function buildApp(env = process.env) {
   // Historical track record — how the model's past signals have played out.
   app.get("/api/track-record", (req, res) => {
     res.json(db.getTrackRecord());
+  });
+
+  // ── Portfolio (Phase 3) ─────────────────────────────────────────
+  // Holdings enriched with live price + signal, P&L, and a roll-up.
+  app.get("/api/portfolio", (req, res) => {
+    res.json(buildPortfolio(db.listHoldings(), store.stocks));
+  });
+
+  // Add or update a position. Validates against the tracked universe.
+  app.post("/api/portfolio", (req, res) => {
+    const ticker = String(req.body?.ticker ?? "").toUpperCase();
+    const shares = Number(req.body?.shares);
+    const costBasis = Number(req.body?.costBasis);
+    if (!TICKERS.includes(ticker)) return res.status(400).json({ error: `Unknown ticker ${ticker}` });
+    if (!(shares > 0)) return res.status(400).json({ error: "shares must be a positive number" });
+    if (!(costBasis > 0)) return res.status(400).json({ error: "costBasis must be a positive number" });
+    db.upsertHolding({ ticker, shares, costBasis });
+    res.json(buildPortfolio(db.listHoldings(), store.stocks));
+  });
+
+  // Remove a position.
+  app.delete("/api/portfolio/:ticker", (req, res) => {
+    db.removeHolding(req.params.ticker.toUpperCase());
+    res.json(buildPortfolio(db.listHoldings(), store.stocks));
   });
 
   // Manual refresh. Returns immediately; the polling client picks up new data.

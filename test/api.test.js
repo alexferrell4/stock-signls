@@ -24,6 +24,7 @@ after(() => server?.close());
 const get = async (p) => (await fetch(base + p)).json();
 const post = async (p, body) =>
   (await fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+const del = async (p) => (await fetch(base + p, { method: "DELETE" })).json();
 
 test("GET /api/health reports mock modes and persistence", async () => {
   const h = await get("/api/health");
@@ -82,4 +83,24 @@ test("POST /api/advisor answers buy/hold/sell across the board", async () => {
 test("POST /api/advisor validates input", async () => {
   const res = await fetch(base + "/api/advisor", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   assert.equal(res.status, 400);
+});
+
+test("portfolio: add, enrich, and remove a position", async () => {
+  const added = await post("/api/portfolio", { ticker: "AAPL", shares: 10, costBasis: 100 });
+  const pos = added.positions.find((p) => p.ticker === "AAPL");
+  assert.ok(pos, "position present");
+  assert.equal(pos.shares, 10);
+  assert.ok(typeof pos.marketValue === "number", "enriched with live price");
+  assert.ok(["BUY", "HOLD", "SELL"].includes(pos.signal));
+  assert.ok(typeof added.summary.totalValue === "number");
+
+  const after = await del("/api/portfolio/AAPL");
+  assert.ok(!after.positions.some((p) => p.ticker === "AAPL"));
+});
+
+test("POST /api/portfolio rejects unknown ticker and bad shares", async () => {
+  const bad1 = await fetch(base + "/api/portfolio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticker: "ZZZZ", shares: 1, costBasis: 1 }) });
+  assert.equal(bad1.status, 400);
+  const bad2 = await fetch(base + "/api/portfolio", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticker: "AAPL", shares: -5, costBasis: 100 }) });
+  assert.equal(bad2.status, 400);
 });

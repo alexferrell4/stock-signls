@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Navbar, { COMPANY } from "./components/Navbar";
 import MarketPulse from "./components/MarketPulse";
 import TrackRecord from "./components/TrackRecord";
@@ -6,7 +6,9 @@ import StockCard from "./components/StockCard";
 import StockTable from "./components/StockTable";
 import StockModal from "./components/StockModal";
 import Advisor from "./components/Advisor";
+import Portfolio from "./components/Portfolio";
 import { useStocks } from "./hooks/useStocks";
+import { usePortfolio } from "./hooks/usePortfolio";
 
 const FILTERS = ["ALL", "BUY", "HOLD", "SELL"];
 const FILTER_COLORS = { BUY: "var(--buy)", HOLD: "var(--hold)", SELL: "var(--sell)", ALL: "var(--text)" };
@@ -44,12 +46,20 @@ function SkeletonCard() {
 
 export default function App() {
   const { stocks, loading, error, lastUpdated, nextUpdate, summary, refresh, refreshing } = useStocks();
+  const [page, setPage] = useState("dashboard");
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState("score");
   const [sortDir, setSortDir] = useState("desc");
   const [view, setView] = useState("grid");
   const [selectedTicker, setSelected] = useState(null);
+
+  const pf = usePortfolio(page === "portfolio");
+  // Keep portfolio P&L fresh as new prices arrive while viewing it.
+  useEffect(() => {
+    if (page === "portfolio" && lastUpdated) pf.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastUpdated, page]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -73,6 +83,30 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh" }}>
       <Navbar nextUpdate={nextUpdate} onRefresh={refresh} refreshing={refreshing} />
+
+      {/* Page tabs */}
+      <div style={{ display: "flex", gap: 4, padding: "12px 28px 0" }}>
+        {[["dashboard", "Dashboard"], ["portfolio", "Portfolio"]].map(([p, label]) => (
+          <button key={p} onClick={() => setPage(p)} style={{
+            padding: "8px 16px", border: "none", borderRadius: 8,
+            background: page === p ? "var(--surf3)" : "transparent",
+            color: page === p ? "var(--text)" : "var(--muted)",
+            fontFamily: "var(--sans)", fontSize: ".82rem", fontWeight: 600, cursor: "pointer", transition: "all .15s",
+          }}>
+            {label}
+            {p === "portfolio" && pf.data?.summary?.alerts?.length > 0 && (
+              <span style={{ marginLeft: 7, padding: "1px 6px", borderRadius: 10, background: "var(--sell-d)", color: "var(--sell)", fontSize: ".62rem", fontWeight: 700 }}>
+                {pf.data.summary.alerts.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {page === "portfolio" ? (
+        <Portfolio portfolio={pf.data} loading={pf.loading} error={pf.error} onAdd={pf.add} onRemove={pf.remove} onSelect={setSelected} />
+      ) : (
+      <>
       <MarketPulse summary={summary} stocks={stocks} lastUpdated={lastUpdated} />
       <TrackRecord refreshing={refreshing} />
       <Advisor />
@@ -169,6 +203,8 @@ export default function App() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
 
       {selectedTicker && <StockModal ticker={selectedTicker} onClose={() => setSelected(null)} />}

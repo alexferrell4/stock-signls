@@ -23,6 +23,29 @@ export async function fetchTrackRecord() {
   return res.json();
 }
 
+export async function fetchPortfolio() {
+  const res = await fetch(`${BASE}/portfolio`);
+  if (!res.ok) throw new Error("Failed to fetch portfolio");
+  return res.json();
+}
+
+export async function addHolding(ticker, shares, costBasis) {
+  const res = await fetch(`${BASE}/portfolio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticker, shares, costBasis }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to add position");
+  return data;
+}
+
+export async function removeHolding(ticker) {
+  const res = await fetch(`${BASE}/portfolio/${ticker}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove position");
+  return res.json();
+}
+
 export async function sendChatMessage(ticker, message, history) {
   const res = await fetch(`${BASE}/chat/${ticker}`, {
     method: "POST",

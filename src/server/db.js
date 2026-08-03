@@ -34,6 +34,9 @@ function nullDb() {
     evaluatePending() { return 0; },
     getTrackRecord() { return { enabled: false, total: 0, evaluated: 0, overall: null, bySignal: [], best: null, worst: null }; },
     getTickerHistory() { return []; },
+    upsertHolding() {},
+    removeHolding() {},
+    listHoldings() { return []; },
     close() {},
   };
 }
@@ -69,6 +72,13 @@ export function createDb(env = process.env) {
     );
     CREATE INDEX IF NOT EXISTS idx_snap_ticker ON snapshots(ticker, ts_ms);
     CREATE INDEX IF NOT EXISTS idx_snap_pending ON snapshots(ticker, correct);
+
+    CREATE TABLE IF NOT EXISTS holdings (
+      ticker     TEXT PRIMARY KEY,
+      shares     REAL NOT NULL,
+      cost_basis REAL NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   const insert = db.prepare(
@@ -152,5 +162,28 @@ export function createDb(env = process.env) {
     ).all(ticker, limit);
   }
 
-  return { enabled: true, recordSnapshot, evaluatePending, getTrackRecord, getTickerHistory, close: () => db.close() };
+  // ── Portfolio holdings (Phase 3) ──────────────────────────────
+  const holdingUpsert = db.prepare(
+    `INSERT INTO holdings (ticker, shares, cost_basis, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(ticker) DO UPDATE SET shares = excluded.shares, cost_basis = excluded.cost_basis, updated_at = excluded.updated_at`
+  );
+  const holdingDelete = db.prepare(`DELETE FROM holdings WHERE ticker = ?`);
+  const holdingList = db.prepare(`SELECT ticker, shares, cost_basis, updated_at FROM holdings ORDER BY ticker`);
+
+  function upsertHolding({ ticker, shares, costBasis }) {
+    holdingUpsert.run(ticker, shares, costBasis, new Date().toISOString());
+  }
+  function removeHolding(ticker) {
+    holdingDelete.run(ticker);
+  }
+  function listHoldings() {
+    return holdingList.all().map((h) => ({ ticker: h.ticker, shares: h.shares, costBasis: h.cost_basis, updatedAt: h.updated_at }));
+  }
+
+  return {
+    enabled: true,
+    recordSnapshot, evaluatePending, getTrackRecord, getTickerHistory,
+    upsertHolding, removeHolding, listHoldings,
+    close: () => db.close(),
+  };
 }
