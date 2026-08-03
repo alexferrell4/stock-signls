@@ -16,17 +16,29 @@ export function useStocks() {
       setLastUpdated(data.lastUpdated);
       setNextUpdate(data.nextUpdate);
       setError(null);
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Self-scheduling poll: while connected, refresh every 5 min; while the
+  // server is unreachable (e.g. the API started a moment after the UI under
+  // `npm start`), retry every 3s so it recovers on its own instead of being
+  // stuck on the error screen for a full interval.
   useEffect(() => {
-    load();
-    const id = setInterval(load, 5 * 60 * 1000);
-    return () => clearInterval(id);
+    let stopped = false;
+    let timer;
+    const tick = async () => {
+      if (stopped) return;
+      const ok = await load();
+      timer = setTimeout(tick, ok ? 5 * 60 * 1000 : 3000);
+    };
+    tick();
+    return () => { stopped = true; clearTimeout(timer); };
   }, [load]);
 
   const refresh = useCallback(async () => {

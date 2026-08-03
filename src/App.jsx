@@ -179,8 +179,12 @@ export default function App() {
       {/* Content */}
       {error ? (
         <div style={{ textAlign: "center", padding: "80px 24px" }}>
-          <div style={{ color: "var(--sell)", fontSize: "1rem", marginBottom: 8 }}>Cannot reach server</div>
-          <p style={{ fontSize: ".82rem", color: "var(--muted)" }}>Make sure the Trendline API is running on port 3000.</p>
+          <div style={{ color: "var(--sell)", fontSize: "1rem", marginBottom: 8 }}>Connecting to the Trendline API…</div>
+          <p style={{ fontSize: ".82rem", color: "var(--muted)", lineHeight: 1.6 }}>
+            The API server (port 3000) isn’t responding yet. Start everything with <code style={{ color: "var(--dim)" }}>npm start</code>,
+            or run <code style={{ color: "var(--dim)" }}>node server.js</code> alongside the dev server.<br />
+            Retrying automatically…
+          </p>
         </div>
       ) : loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(285px, 1fr))", gap: 13, padding: "0 28px 48px" }}>
