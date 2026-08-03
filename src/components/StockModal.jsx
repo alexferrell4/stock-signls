@@ -25,7 +25,7 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function StockModal({ ticker, onClose }) {
+export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -47,7 +47,8 @@ export default function StockModal({ ticker, onClose }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [load, onClose]);
 
-  const s  = data?.stock;
+  // Project the selected timeframe over the stock (see App.jsx tfStocks).
+  const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
   const news = data?.news ?? [];
   const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
@@ -91,6 +92,7 @@ export default function StockModal({ ticker, onClose }) {
               <span style={{ fontSize: "1.9rem", fontWeight: 700 }}>{ticker}</span>
               <span style={{ padding: "4px 11px", borderRadius: 5, fontSize: ".78rem", fontWeight: 700, background: sigDim(s.signal), color: sc }}>{s.signal}</span>
               <span style={{ padding: "3px 8px", borderRadius: 5, background: "var(--ai-d)", color: "var(--ai)", fontSize: ".62rem", fontWeight: 700, letterSpacing: ".07em" }}>AI</span>
+              <span style={{ padding: "3px 8px", borderRadius: 5, background: "var(--surf2)", color: "var(--blue)", fontSize: ".62rem", fontWeight: 700, letterSpacing: ".05em", textTransform: "capitalize" }}>{timeframe}</span>
             </div>
             <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: 16 }}>{COMPANY[ticker] ?? ticker}</div>
 

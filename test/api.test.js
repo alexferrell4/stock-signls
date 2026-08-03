@@ -49,11 +49,12 @@ test("GET /api/stocks returns sorted signals", async () => {
   }
 });
 
-test("GET /api/stocks/:ticker returns stock, news, history", async () => {
+test("GET /api/stocks/:ticker returns stock, news, history, timeframes", async () => {
   const d = await get("/api/stocks/AAPL");
   assert.equal(d.stock.ticker, "AAPL");
   assert.ok(Array.isArray(d.news));
   assert.ok(Array.isArray(d.history) && d.history.length >= 1);
+  assert.ok(d.stock.timeframes.daily && d.stock.timeframes.weekly && d.stock.timeframes.monthly);
 });
 
 test("GET /api/stocks/:ticker 404s for unknown symbol", async () => {

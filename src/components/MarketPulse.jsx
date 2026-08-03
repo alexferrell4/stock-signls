@@ -3,7 +3,7 @@
 
 const sigColor = (s) => (s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" : "var(--hold)");
 
-export default function MarketPulse({ summary, stocks = [], lastUpdated }) {
+export default function MarketPulse({ summary, stocks = [], lastUpdated, timeframe = "daily" }) {
   const total = summary.buy + summary.hold + summary.sell;
   const pct = (n) => (total ? (n / total) * 100 : 0);
 
@@ -74,7 +74,7 @@ export default function MarketPulse({ summary, stocks = [], lastUpdated }) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
         <span style={{ fontSize: ".64rem", color: "var(--muted)", fontFamily: "var(--mono)" }}>
-          Tracking {total} · Last run {lastTime}
+          Tracking {total} · <span style={{ color: "var(--blue)", textTransform: "capitalize" }}>{timeframe}</span> · Last run {lastTime}
         </span>
       </div>
     </div>

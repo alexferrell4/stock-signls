@@ -47,12 +47,28 @@ function SkeletonCard() {
 export default function App() {
   const { stocks, loading, error, lastUpdated, nextUpdate, summary, refresh, refreshing } = useStocks();
   const [page, setPage] = useState("dashboard");
+  const [timeframe, setTimeframe] = useState("daily");
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState("score");
   const [sortDir, setSortDir] = useState("desc");
   const [view, setView] = useState("grid");
   const [selectedTicker, setSelected] = useState(null);
+
+  // Project each stock onto the selected timeframe: the timeframe's own
+  // change %, score, signal, breakdown, explanation and analysis take over the
+  // top-level fields, so every card/row/tile renders that window with no other
+  // changes. Missing timeframes fall back to the daily (top-level) values.
+  const tfStocks = useMemo(
+    () => stocks.map((s) => ({ ...s, ...(s.timeframes?.[timeframe] ?? {}) })),
+    [stocks, timeframe]
+  );
+  const tfSummary = useMemo(() => ({
+    buy: tfStocks.filter((s) => s.signal === "BUY").length,
+    hold: tfStocks.filter((s) => s.signal === "HOLD").length,
+    sell: tfStocks.filter((s) => s.signal === "SELL").length,
+    avg: tfStocks.length ? Math.round(tfStocks.reduce((a, s) => a + (s.score ?? 0), 0) / tfStocks.length * 100) : 0,
+  }), [tfStocks]);
 
   const pf = usePortfolio(page === "portfolio");
   // Keep portfolio P&L fresh as new prices arrive while viewing it.
@@ -63,7 +79,7 @@ export default function App() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = stocks.filter((s) => (filter === "ALL" ? true : s.signal === filter));
+    let list = tfStocks.filter((s) => (filter === "ALL" ? true : s.signal === filter));
     if (q) list = list.filter((s) => s.ticker.toLowerCase().includes(q) || (COMPANY[s.ticker] ?? "").toLowerCase().includes(q));
     list = [...list].sort((a, b) => {
       if (sortKey === "ticker") {
@@ -73,7 +89,7 @@ export default function App() {
       return sortDir === "asc" ? av - bv : bv - av;
     });
     return list;
-  }, [stocks, filter, query, sortKey, sortDir]);
+  }, [tfStocks, filter, query, sortKey, sortDir]);
 
   const onSort = (key) => {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -107,7 +123,7 @@ export default function App() {
         <Portfolio portfolio={pf.data} loading={pf.loading} error={pf.error} onAdd={pf.add} onRemove={pf.remove} onSelect={setSelected} />
       ) : (
       <>
-      <MarketPulse summary={summary} stocks={stocks} lastUpdated={lastUpdated} />
+      <MarketPulse summary={tfSummary} stocks={tfStocks} lastUpdated={lastUpdated} timeframe={timeframe} />
       <TrackRecord refreshing={refreshing} />
       <Advisor />
 
@@ -119,6 +135,18 @@ export default function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Timeframe */}
+          <div style={{ display: "flex", gap: 3, background: "var(--surf)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
+            {[["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]].map(([tf, label]) => (
+              <button key={tf} onClick={() => setTimeframe(tf)} style={{
+                padding: "5px 12px", border: "none", borderRadius: 5,
+                background: timeframe === tf ? "var(--surf3)" : "transparent",
+                color: timeframe === tf ? "var(--blue)" : "var(--muted)",
+                fontFamily: "var(--sans)", fontSize: ".74rem", fontWeight: 600, cursor: "pointer", transition: "all .15s",
+              }}>{label}</button>
+            ))}
+          </div>
+
           {/* Search */}
           <div style={{ position: "relative" }}>
             <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontSize: ".8rem", pointerEvents: "none" }}>⌕</span>
@@ -211,7 +239,7 @@ export default function App() {
       </>
       )}
 
-      {selectedTicker && <StockModal ticker={selectedTicker} onClose={() => setSelected(null)} />}
+      {selectedTicker && <StockModal ticker={selectedTicker} timeframe={timeframe} onClose={() => setSelected(null)} />}
     </div>
   );
 }

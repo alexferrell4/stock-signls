@@ -78,5 +78,29 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     return [];
   }
 
-  return { mode: "live", tickers: TICKERS, quote, news, tick() {} };
+  // Real weekly/monthly changes from Yahoo Finance's chart endpoint (free,
+  // no key — Finnhub's free tier has no history). Daily stays from the live
+  // Finnhub quote. Anchored on the current price vs past daily closes.
+  async function changes(ticker, price, dailyChange) {
+    const out = { daily: dailyChange, weekly: null, monthly: null };
+    try {
+      const res = await fetchImpl(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1mo&interval=1d`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      );
+      const j = await res.json();
+      const closes = (j?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []).filter((x) => x != null);
+      if (closes.length >= 6) {
+        const wk = closes[closes.length - 6]; // ~5 trading days back
+        out.weekly = round2(((price - wk) / wk) * 100);
+      }
+      if (closes.length >= 2) {
+        const mo = closes[0]; // ~1 month back
+        out.monthly = round2(((price - mo) / mo) * 100);
+      }
+    } catch { /* leave weekly/monthly null → falls back to daily in the UI */ }
+    return out;
+  }
+
+  return { mode: "live", tickers: TICKERS, quote, news, changes, tick() {} };
 }

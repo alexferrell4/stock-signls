@@ -4,7 +4,7 @@
 // historical track record are persisted via the injected `db` (SQLite).
 
 import { computeSignal, scoreText } from "./signal.js";
-import { companyName } from "./universe.js";
+import { companyName, TIMEFRAMES } from "./universe.js";
 import { detectAlerts } from "./alerts.js";
 
 const HISTORY_LEN = 60; // keep last N score points per ticker
@@ -42,48 +42,72 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
   async function refreshOne(ticker) {
     const quote = await provider.quote(ticker);
     const news = await provider.news(ticker);
+    const changes = provider.changes
+      ? await provider.changes(ticker, quote.price, quote.changePercent)
+      : { daily: quote.changePercent, weekly: null, monthly: null };
 
-    const sig = computeSignal({
-      changePercent: quote.changePercent,
+    // Inputs shared across every timeframe — only the change % (momentum) differs.
+    const common = {
       currentVolume: quote.currentVolume,
       avgVolume: quote.avgVolume,
       sentimentScore: quote.sentimentScore,
       newsItems: news,
-      // Let the provider declare which inputs are real (Finnhub's free tier
-      // has no volume/sentiment); the engine renormalizes over what's present.
       available: {
         volume: quote.avgVolume > 0,
         sentiment: quote.sentimentAvailable !== false,
       },
-    });
+    };
 
-    const analysis = await ai.generateAnalysis({
-      ticker,
-      company: companyName(ticker),
-      quote,
-      signal: sig,
-      news,
-    });
+    // A full signal per timeframe (daily/weekly/monthly). Momentum uses that
+    // window's change; sentiment/volume/news are the same. AI analysis is
+    // generated per timeframe in mock mode; in live-AI mode only daily is
+    // generated (and reused) to avoid tripling Claude spend.
+    const timeframes = {};
+    let dailyAnalysis = null;
+    for (const tf of TIMEFRAMES) {
+      const ch = changes[tf];
+      if (ch == null) { timeframes[tf] = null; continue; }
+      const sig = computeSignal({ ...common, changePercent: ch });
+      let analysis;
+      if (ai.mode === "mock" || tf === "daily") {
+        analysis = await ai.generateAnalysis({
+          ticker, company: companyName(ticker),
+          quote: { ...quote, changePercent: ch }, signal: sig, news,
+        });
+        if (tf === "daily") dailyAnalysis = analysis;
+      } else {
+        analysis = dailyAnalysis;
+      }
+      timeframes[tf] = {
+        changePercent: ch,
+        score: sig.score, signal: sig.signal,
+        breakdown: sig.breakdown, contributions: sig.contributions,
+        explanation: sig.explanation, reason: sig.reason,
+        aiAnalysis: analysis,
+      };
+    }
 
+    // Top-level fields mirror the DAILY timeframe (canonical for alerts,
+    // track record, portfolio, and any client that ignores timeframes).
+    const daily = timeframes.daily ?? {};
     const stock = {
       ticker,
       company: companyName(ticker),
       price: quote.price,
-      changePercent: quote.changePercent,
       high: quote.high,
       low: quote.low,
       open: quote.open,
       volume: quote.currentVolume,
       avgVolume: quote.avgVolume,
       finnhubSentiment: quote.sentimentScore,
-      ...sig,
-      aiAnalysis: analysis,
+      ...daily,
+      timeframes,
       updatedAt: new Date().toISOString(),
     };
 
     store.stocks[ticker] = stock;
     store.news[ticker] = news;
-    pushHistory(ticker, sig.score, sig.signal);
+    pushHistory(ticker, daily.score ?? 0, daily.signal ?? "HOLD");
     return stock;
   }
 

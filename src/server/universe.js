@@ -22,6 +22,10 @@ export const UNIVERSE = {
 
 export const TICKERS = Object.keys(UNIVERSE);
 
+// Signal timeframes. Daily = today vs prev close; weekly ≈ 5 trading days;
+// monthly ≈ 21 trading days. Each gets its own momentum-driven signal.
+export const TIMEFRAMES = ["daily", "weekly", "monthly"];
+
 export function companyName(ticker) {
   return UNIVERSE[ticker] ?? ticker;
 }

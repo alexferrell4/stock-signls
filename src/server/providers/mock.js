@@ -93,11 +93,24 @@ export function makeMockProvider() {
     return items;
   }
 
+  // Per-timeframe % changes. Daily comes from the quote; weekly/monthly are
+  // synthetic but scaled larger (longer windows swing more), and drift each
+  // cycle like everything else.
+  async function changes(ticker, price, dailyChange) {
+    const r = rng(seedFor(ticker + "tf") + cycle * 13);
+    return {
+      daily: dailyChange,
+      weekly: Math.round((r() - 0.45) * 20 * 100) / 100,   // ~ -9%..+11%
+      monthly: Math.round((r() - 0.42) * 42 * 100) / 100,  // ~ -18%..+24%
+    };
+  }
+
   return {
     mode: "mock",
     tickers: TICKERS,
     quote,
     news,
+    changes,
     // advance the drift so the next refresh looks different
     tick() { cycle += 1; },
   };
