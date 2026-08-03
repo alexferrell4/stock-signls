@@ -49,6 +49,12 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       avgVolume: quote.avgVolume,
       sentimentScore: quote.sentimentScore,
       newsItems: news,
+      // Let the provider declare which inputs are real (Finnhub's free tier
+      // has no volume/sentiment); the engine renormalizes over what's present.
+      available: {
+        volume: quote.avgVolume > 0,
+        sentiment: quote.sentimentAvailable !== false,
+      },
     });
 
     const analysis = await ai.generateAnalysis({

@@ -44,23 +44,39 @@ export function computeSignal({
   avgVolume = 0,
   sentimentScore = 0,
   newsItems = [],
+  available = {},
 } = {}) {
   // Each component is normalized to [0,1].
   const momentum = (clamp(changePercent, -10, 10) + 10) / 20;
   const volRatio = avgVolume > 0 ? currentVolume / avgVolume : 1;
   const volumeSpike = avgVolume > 0 ? clamp(volRatio / 2, 0, 1) : 0.5;
   const sentiment = (clamp(sentimentScore, -1, 1) + 1) / 2;
-  const newsAvg = newsItems.length
-    ? newsItems.reduce((s, n) => s + (n.sentiment ?? 0), 0) / newsItems.length
+  const newsCount = newsItems.length;
+  const newsAvg = newsCount
+    ? newsItems.reduce((s, n) => s + (n.sentiment ?? 0), 0) / newsCount
     : 0;
   const newsImpact = (clamp(newsAvg, -1, 1) + 1) / 2;
 
-  const score = round2(
-    WEIGHTS.momentum * momentum +
-    WEIGHTS.sentiment * sentiment +
-    WEIGHTS.volumeSpike * volumeSpike +
-    WEIGHTS.newsImpact * newsImpact
-  );
+  // Which inputs actually carry data. Momentum (price) and news are always
+  // attempted; volume and sentiment can be missing (e.g. Finnhub's free tier
+  // has neither). An unavailable input is dropped rather than fed in as a
+  // neutral 0.5, which would otherwise pull every score toward HOLD.
+  const avail = {
+    momentum: true,
+    sentiment: available.sentiment ?? true,
+    volumeSpike: available.volume ?? (avgVolume > 0),
+    newsImpact: true,
+  };
+
+  // Effective weights: base weights renormalized over the available inputs so
+  // they still sum to 1 (keeps the 50 = neutral baseline intact).
+  const weight = {};
+  let wsum = 0;
+  for (const k of Object.keys(WEIGHTS)) { weight[k] = avail[k] ? WEIGHTS[k] : 0; wsum += weight[k]; }
+  for (const k of Object.keys(weight)) weight[k] = wsum > 0 ? weight[k] / wsum : 0;
+
+  const parts = { momentum, sentiment, volumeSpike, newsImpact };
+  const score = round2(Object.keys(parts).reduce((acc, k) => acc + weight[k] * parts[k], 0));
 
   const breakdown = {
     momentum: round2(momentum),
@@ -69,14 +85,12 @@ export function computeSignal({
     newsImpact: round2(newsImpact),
   };
 
-  const newsCount = newsItems.length;
-
   // Structured, auditable decomposition. Every component reports the points
   // it adds to the 0–100 score, how far that is from a neutral baseline (50),
   // and the raw driver behind it. This is the source of truth for the UI's
   // "why this score" panel and for grounding the AI analysis.
   const explanation = buildExplanation({
-    parts: { momentum, sentiment, volumeSpike, newsImpact },
+    parts, weight, avail,
     raw: { changePercent, volRatio, sentimentScore, newsAvg, newsCount, avgVolume },
     score,
   });
@@ -97,29 +111,27 @@ export function computeSignal({
 const NEUTRAL = 0.5;
 
 // Builds the per-component explanation array + a one-line summary.
-function buildExplanation({ parts, raw, score }) {
+// `weight` holds the effective (renormalized) weights; `avail` flags which
+// inputs had data. Unavailable inputs contribute 0 and are labeled as such.
+function buildExplanation({ parts, weight, avail, raw, score }) {
   const meta = {
     momentum: {
       label: "Momentum",
-      weight: WEIGHTS.momentum,
       detail: `${raw.changePercent >= 0 ? "+" : ""}${raw.changePercent.toFixed(2)}% today`,
       up: "rising price", down: "falling price",
     },
     sentiment: {
       label: "Sentiment",
-      weight: WEIGHTS.sentiment,
       detail: `analyst sentiment ${raw.sentimentScore >= 0 ? "+" : ""}${raw.sentimentScore.toFixed(2)}`,
       up: "positive sentiment", down: "negative sentiment",
     },
     volumeSpike: {
       label: "Volume",
-      weight: WEIGHTS.volumeSpike,
       detail: raw.avgVolume > 0 ? `${raw.volRatio.toFixed(1)}× avg volume` : "no volume data",
       up: "elevated volume", down: "thin volume",
     },
     newsImpact: {
       label: "News",
-      weight: WEIGHTS.newsImpact,
       detail: raw.newsCount
         ? `${raw.newsCount} headline${raw.newsCount > 1 ? "s" : ""}, avg ${raw.newsAvg >= 0 ? "+" : ""}${raw.newsAvg.toFixed(2)}`
         : "no headlines",
@@ -129,19 +141,22 @@ function buildExplanation({ parts, raw, score }) {
 
   const components = Object.entries(parts).map(([key, v]) => {
     const m = meta[key];
-    const points = Math.round(m.weight * v * 100);           // toward the 0–100 score
-    const delta = Math.round(m.weight * (v - NEUTRAL) * 100); // vs neutral baseline
+    const w = weight[key];
+    const available = avail[key];
+    const points = Math.round(w * v * 100);           // toward the 0–100 score
+    const delta = Math.round(w * (v - NEUTRAL) * 100); // vs neutral baseline
     const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
     return {
       key,
       label: m.label,
-      weightPct: Math.round(m.weight * 100),
+      weightPct: Math.round(w * 100),
       normalized: Math.round(v * 100), // 0–100 strength of this component
       points,
       delta,
       direction,
-      detail: m.detail,
-      phrase: direction === "up" ? m.up : direction === "down" ? m.down : "neutral",
+      available,
+      detail: available ? m.detail : "unavailable on this data plan",
+      phrase: !available ? "unavailable" : direction === "up" ? m.up : direction === "down" ? m.down : "neutral",
     };
   });
 

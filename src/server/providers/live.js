@@ -22,24 +22,10 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     const prevClose = d.pc ?? 0;
     const changePercent = prevClose ? ((d.c - prevClose) / prevClose) * 100 : 0;
 
-    // Finnhub's basic quote lacks volume; approximate spike from candle data
-    // if available, otherwise leave avgVolume 0 (signal engine handles it).
-    let currentVolume = 0;
-    let avgVolume = 0;
-    let sentimentScore = 0;
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      const from = now - 30 * 24 * 3600;
-      const cRes = await fetchImpl(
-        `https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${now}&token=${finnhubKey}`
-      );
-      const c = await cRes.json();
-      if (c.s === "ok" && Array.isArray(c.v) && c.v.length) {
-        currentVolume = c.v[c.v.length - 1];
-        avgVolume = Math.round(c.v.reduce((a, b) => a + b, 0) / c.v.length);
-      }
-    } catch { /* volume is best-effort */ }
-
+    // Finnhub's free tier provides neither intraday volume (the /stock/candle
+    // endpoint 403s) nor news sentiment, so we leave those neutral. The signal
+    // is then driven by real price momentum + real news headlines. Volume and
+    // sentiment become available automatically on a paid plan.
     return {
       price,
       changePercent: round2(changePercent),
@@ -47,9 +33,10 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
       low: d.l ?? 0,
       open: d.o ?? 0,
       prevClose,
-      currentVolume,
-      avgVolume,
-      sentimentScore,
+      currentVolume: 0,
+      avgVolume: 0,
+      sentimentScore: 0,
+      sentimentAvailable: false, // Finnhub free tier has no news sentiment
     };
   }
 
