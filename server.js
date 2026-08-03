@@ -89,7 +89,12 @@ export function buildApp(env = process.env) {
     const ticker = req.params.ticker.toUpperCase();
     const stock = store.stocks[ticker];
     if (!stock) return res.status(404).json({ error: `No data for ${ticker}` });
-    res.json({ stock, news: store.news[ticker] ?? [], history: store.history[ticker] ?? [] });
+    res.json({
+      stock,
+      news: store.news[ticker] ?? [],
+      history: store.history[ticker] ?? [],
+      priceHistory: store.priceHistory[ticker] ?? [],
+    });
   });
 
   // Historical track record — how the model's past signals have played out.

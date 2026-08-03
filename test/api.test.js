@@ -55,6 +55,8 @@ test("GET /api/stocks/:ticker returns stock, news, history, timeframes", async (
   assert.ok(Array.isArray(d.news));
   assert.ok(Array.isArray(d.history) && d.history.length >= 1);
   assert.ok(d.stock.timeframes.daily && d.stock.timeframes.weekly && d.stock.timeframes.monthly);
+  assert.ok(Array.isArray(d.priceHistory) && d.priceHistory.length > 1, "has a price series");
+  assert.ok(typeof d.priceHistory[0].close === "number" && typeof d.priceHistory[0].t === "number");
 });
 
 test("GET /api/stocks/:ticker 404s for unknown symbol", async () => {

@@ -98,10 +98,22 @@ export function makeMockProvider() {
   // cycle like everything else.
   async function changes(ticker, price, dailyChange) {
     const r = rng(seedFor(ticker + "tf") + cycle * 13);
+
+    // Synthesize ~22 daily closes ending at the current price (random walk
+    // back in time, then reversed so the last point is `price`).
+    const N = 22;
+    const back = [];
+    let p = price;
+    for (let i = 0; i < N; i++) { back.push(Math.round(p * 100) / 100); p = p * (1 + (r() - 0.5) * 0.035); }
+    back.reverse();
+    const now = Date.now();
+    const series = back.map((close, i) => ({ t: now - (N - 1 - i) * 86_400_000, close }));
+
     return {
       daily: dailyChange,
       weekly: Math.round((r() - 0.45) * 20 * 100) / 100,   // ~ -9%..+11%
       monthly: Math.round((r() - 0.42) * 42 * 100) / 100,  // ~ -18%..+24%
+      series,
     };
   }
 

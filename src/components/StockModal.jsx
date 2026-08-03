@@ -9,6 +9,19 @@ const f$ = p => p != null ? `$${Number(p).toLocaleString("en-US", { minimumFract
 const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" : "var(--hold)";
 const sigDim   = s => s === "BUY" ? "var(--buy-d)" : s === "SELL" ? "var(--sell-d)" : "var(--hold-d)";
 
+function PriceTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: "var(--surf2)", border: "1px solid var(--border2)",
+      borderRadius: 8, padding: "6px 10px", fontSize: ".72rem", fontFamily: "var(--mono)",
+    }}>
+      <div style={{ color: "var(--muted)", marginBottom: 2 }}>{payload[0]?.payload?.date}</div>
+      <div style={{ color: "var(--text)", fontWeight: 600 }}>${Number(payload[0]?.value ?? 0).toFixed(2)}</div>
+    </div>
+  );
+}
+
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   return (
@@ -50,6 +63,10 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   // Project the selected timeframe over the stock (see App.jsx tfStocks).
   const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
   const news = data?.news ?? [];
+  const chartData = (data?.priceHistory ?? []).map((p) => ({
+    date: new Date(p.t).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    price: p.close,
+  }));
   const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
   const bd = s?.breakdown ?? {};
@@ -112,6 +129,32 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
                 </div>
               ))}
             </div>
+
+            {/* Price chart */}
+            {chartData.length > 1 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>Price — last 30 days</span>
+                  <span style={{ fontSize: ".66rem", fontFamily: "var(--mono)", color: chg >= 0 ? "var(--buy)" : "var(--sell)" }}>
+                    {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={170}>
+                  <AreaChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="tl-price-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={sc} stopOpacity={0.32} />
+                        <stop offset="100%" stopColor={sc} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
+                    <Tooltip content={<PriceTooltip />} />
+                    <Area type="monotone" dataKey="price" stroke={sc} strokeWidth={2} fill="url(#tl-price-grad)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
             {/* Gauge */}
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>

@@ -22,6 +22,7 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
     stocks: {},        // ticker -> enriched signal object
     news: {},          // ticker -> [news items]
     history: {},       // ticker -> [{ time, score, signal }]
+    priceHistory: {},  // ticker -> [{ t, close }] daily price series
     lastUpdated: null,
     nextUpdate: null,
     refreshing: false,
@@ -107,6 +108,7 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
 
     store.stocks[ticker] = stock;
     store.news[ticker] = news;
+    if (Array.isArray(changes.series) && changes.series.length) store.priceHistory[ticker] = changes.series;
     pushHistory(ticker, daily.score ?? 0, daily.signal ?? "HOLD");
     return stock;
   }
