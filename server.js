@@ -37,7 +37,7 @@ export function buildApp(env = process.env) {
   const { store, refreshAll } = createStore({ provider, ai, db, channel });
 
   const REFRESH_MIN = Number(env.REFRESH_MINUTES ?? 5);
-  const spacingMs = provider.mode === "live" ? 1100 : 0; // rate-limit live calls
+  const spacingMs = provider.mode === "live" ? 1500 : 0; // rate-limit live calls (30 tickers)
 
   const app = express();
   app.use(express.json());
@@ -217,8 +217,18 @@ export function buildApp(env = process.env) {
   // Serve the built frontend in production (dist/), if present.
   const distDir = path.join(__dirname, "dist");
   if (fs.existsSync(distDir)) {
-    app.use(express.static(distDir));
-    app.get("*", (req, res) => res.sendFile(path.join(distDir, "index.html")));
+    // Hashed assets are immutable and cache forever; index.html must never be
+    // cached, or the browser keeps loading an old bundle after a rebuild
+    // (the recurring "stale app" gremlin).
+    app.use(express.static(distDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+      },
+    }));
+    app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
+      res.sendFile(path.join(distDir, "index.html"));
+    });
   }
 
   return { app, store, refreshAll, provider, ai, db, REFRESH_MIN, spacingMs };

@@ -18,6 +18,21 @@ export const UNIVERSE = {
   RIVN: "Rivian Automotive",
   SMCI: "Super Micro Computer",
   MSTR: "MicroStrategy Inc.",
+  JPM: "JPMorgan Chase",
+  V: "Visa Inc.",
+  WMT: "Walmart Inc.",
+  DIS: "Walt Disney Co.",
+  BA: "Boeing Co.",
+  XOM: "Exxon Mobil",
+  INTC: "Intel Corp.",
+  CRM: "Salesforce Inc.",
+  ORCL: "Oracle Corp.",
+  ADBE: "Adobe Inc.",
+  UBER: "Uber Technologies",
+  PYPL: "PayPal Holdings",
+  SHOP: "Shopify Inc.",
+  QCOM: "Qualcomm Inc.",
+  BABA: "Alibaba Group",
 };
 
 export const TICKERS = Object.keys(UNIVERSE);

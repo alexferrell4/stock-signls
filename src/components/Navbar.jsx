@@ -1,11 +1,16 @@
 import { useClock } from "../hooks/useClock";
 import AlertsBell from "./AlertsBell";
 
+// Keep in sync with src/server/universe.js UNIVERSE.
 const COMPANY = {
   AAPL:"Apple Inc.", MSFT:"Microsoft Corp.", TSLA:"Tesla Inc.", GOOGL:"Alphabet Inc.",
   AMZN:"Amazon.com", META:"Meta Platforms", NVDA:"NVIDIA Corp.", AMD:"AMD",
   NFLX:"Netflix Inc.", COIN:"Coinbase", PLTR:"Palantir", SOFI:"SoFi",
   RIVN:"Rivian", SMCI:"Super Micro Computer", MSTR:"MicroStrategy",
+  JPM:"JPMorgan Chase", V:"Visa Inc.", WMT:"Walmart Inc.", DIS:"Walt Disney Co.",
+  BA:"Boeing Co.", XOM:"Exxon Mobil", INTC:"Intel Corp.", CRM:"Salesforce Inc.",
+  ORCL:"Oracle Corp.", ADBE:"Adobe Inc.", UBER:"Uber Technologies", PYPL:"PayPal Holdings",
+  SHOP:"Shopify Inc.", QCOM:"Qualcomm Inc.", BABA:"Alibaba Group",
 };
 
 export { COMPANY };
