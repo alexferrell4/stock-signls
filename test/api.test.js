@@ -34,6 +34,20 @@ test("GET /api/health reports mock modes and persistence", async () => {
   assert.equal(h.persistence, "sqlite");
 });
 
+test("GET /api/stocks/:ticker/fundamentals returns profile, metrics, ratings, peers", async () => {
+  const f = await get("/api/stocks/AAPL/fundamentals");
+  assert.ok(f.metrics && typeof f.metrics.pe === "number");
+  assert.ok(f.recommendation && typeof f.recommendation.buy === "number");
+  assert.ok(Array.isArray(f.peers));
+  assert.ok(f.profile && f.profile.name);
+});
+
+test("GET /api/market-news returns headline items", async () => {
+  const n = await get("/api/market-news");
+  assert.ok(Array.isArray(n.items) && n.items.length > 0);
+  assert.ok(n.items[0].title && n.items[0].source);
+});
+
 test("GET /api/track-record returns a valid (possibly empty) shape", async () => {
   const tr = await get("/api/track-record");
   assert.equal(tr.enabled, true);

@@ -47,14 +47,20 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       ? await provider.changes(ticker, quote.price, quote.changePercent)
       : { daily: quote.changePercent, weekly: null, monthly: null };
 
+    // Volume comes from the provider's changes() when present (live pulls it
+    // from Yahoo), else the quote (mock). Sentiment is real in live via analyst
+    // recommendations. So all four signal inputs can now carry real data.
+    const currentVolume = changes.currentVolume || quote.currentVolume || 0;
+    const avgVolume = changes.avgVolume || quote.avgVolume || 0;
+
     // Inputs shared across every timeframe — only the change % (momentum) differs.
     const common = {
-      currentVolume: quote.currentVolume,
-      avgVolume: quote.avgVolume,
+      currentVolume,
+      avgVolume,
       sentimentScore: quote.sentimentScore,
       newsItems: news,
       available: {
-        volume: quote.avgVolume > 0,
+        volume: avgVolume > 0 && currentVolume > 0,
         sentiment: quote.sentimentAvailable !== false,
       },
     };
@@ -98,8 +104,8 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       high: quote.high,
       low: quote.low,
       open: quote.open,
-      volume: quote.currentVolume,
-      avgVolume: quote.avgVolume,
+      volume: currentVolume,
+      avgVolume,
       finnhubSentiment: quote.sentimentScore,
       ...daily,
       timeframes,

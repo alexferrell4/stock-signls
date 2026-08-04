@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { AreaChart, Area, ComposedChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import SignalGauge from "./SignalGauge";
 import ChatBox from "./ChatBox";
-import { fetchStock, fetchChart } from "../lib/api";
+import Fundamentals from "./Fundamentals";
+import { fetchStock, fetchChart, fetchFundamentals } from "../lib/api";
 import { useDrawings } from "../hooks/useDrawings";
 import { COMPANY } from "./Navbar";
 
@@ -91,10 +92,11 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function StockModal({ ticker, timeframe = "daily", onClose }) {
+export default function StockModal({ ticker, timeframe = "daily", onClose, onSelectTicker }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [chart, setChart]   = useState([]);
+  const [fund, setFund]     = useState(null);
   const [indexSeries, setIndexSeries] = useState([]);
   const [peerSeries, setPeerSeries] = useState([]);
   const [peers, setPeers] = useState([]);          // added compare tickers
@@ -136,6 +138,14 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
 
   // Reset the pending trendline point whenever the drawing tool changes.
   useEffect(() => { setPending(null); }, [tool, ticker, timeframe]);
+
+  // Company fundamentals (on demand).
+  useEffect(() => {
+    let cancelled = false;
+    setFund(null);
+    fetchFundamentals(ticker).then((f) => { if (!cancelled) setFund(f); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [ticker]);
 
   // Project the selected timeframe over the stock (see App.jsx tfStocks).
   const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
@@ -475,6 +485,9 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
                 );
               })}
             </div>
+
+            {/* Fundamentals */}
+            <Fundamentals fund={fund ? { ...fund, price: s.price } : null} onSelectPeer={(t) => onSelectTicker?.(t)} />
 
             {/* Chat */}
             <div style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>

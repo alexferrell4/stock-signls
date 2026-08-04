@@ -123,6 +123,19 @@ export function buildApp(env = process.env) {
     res.json(out);
   });
 
+  // Company fundamentals (profile, metrics, analyst ratings, earnings, peers).
+  app.get("/api/stocks/:ticker/fundamentals", async (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    const data = provider.fundamentals ? await provider.fundamentals(ticker) : null;
+    res.json(data ?? {});
+  });
+
+  // General market news feed (business headlines).
+  app.get("/api/market-news", async (req, res) => {
+    const items = provider.marketNews ? await provider.marketNews() : [];
+    res.json({ items });
+  });
+
   // Historical track record — how the model's past signals have played out.
   app.get("/api/track-record", (req, res) => {
     res.json(db.getTrackRecord());

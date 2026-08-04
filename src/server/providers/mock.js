@@ -143,6 +143,45 @@ export function makeMockProvider() {
     });
   }
 
+  const INDUSTRIES = ["Technology", "Semiconductors", "Internet", "Automotive", "Financial Services", "Media"];
+
+  // Synthetic fundamentals mirroring the live shape (profile, metrics, analyst
+  // ratings, earnings, peers) so the modal works fully in mock mode.
+  async function fundamentals(ticker) {
+    const r = rng(seedFor(ticker + "fund") + cycle);
+    const base = BASE_PRICE[ticker] ?? 100;
+    return {
+      profile: {
+        name: companyName(ticker), industry: INDUSTRIES[Math.floor(r() * INDUSTRIES.length)],
+        exchange: "NASDAQ", country: "US", ipo: "2004-08-19", logo: null, weburl: null,
+        marketCap: Math.round(base * (200 + r() * 3000)), shareOutstanding: Math.round(1000 + r() * 15000),
+      },
+      metrics: {
+        high52: round2(base * 1.3), low52: round2(base * 0.7),
+        pe: round2(10 + r() * 40), beta: round2(0.6 + r() * 1.4),
+        ret13w: round2((r() - 0.4) * 40), ret52w: round2((r() - 0.3) * 80),
+        grossMargin: round2(30 + r() * 50), netMargin: round2(5 + r() * 30),
+        divYield: round2(r() * 3), roe: round2(5 + r() * 40),
+      },
+      recommendation: { strongBuy: Math.floor(r() * 15), buy: Math.floor(r() * 20), hold: Math.floor(r() * 15), sell: Math.floor(r() * 6), strongSell: Math.floor(r() * 3), period: "2026-08-01" },
+      lastEarnings: { period: "2026-06-30", estimate: round2(1 + r() * 3), actual: round2(1 + r() * 3), surprisePercent: round2((r() - 0.4) * 20) },
+      nextEarnings: { date: "2026-10-28", epsEstimate: round2(1 + r() * 3) },
+      peers: TICKERS.filter((t) => t !== ticker).slice(0, 6),
+      insiderNet: Math.round((r() - 0.5) * 200_000),
+    };
+  }
+
+  async function marketNews() {
+    const r = rng(seedFor("marketnews") + cycle);
+    const heads = [
+      "Markets edge higher as megacap tech leads", "Fed minutes signal patience on rate cuts",
+      "Oil slips as demand worries resurface", "Chipmakers rally on fresh AI optimism",
+      "Investors weigh a busy earnings week", "Dollar steadies ahead of inflation data",
+      "Retail sales top forecasts, easing recession fears", "Treasury yields tick up after strong jobs print",
+    ];
+    return heads.map((t, i) => ({ title: t, source: SOURCES[Math.floor(r() * SOURCES.length)], url: null, publishedAt: new Date(Date.now() - i * 3600_000).toISOString(), image: null }));
+  }
+
   return {
     mode: "mock",
     tickers: TICKERS,
@@ -150,6 +189,8 @@ export function makeMockProvider() {
     news,
     changes,
     chartSeries,
+    fundamentals,
+    marketNews,
     // advance the drift so the next refresh looks different
     tick() { cycle += 1; },
   };

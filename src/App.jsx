@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Navbar, { COMPANY } from "./components/Navbar";
 import MarketPulse from "./components/MarketPulse";
+import MarketNews from "./components/MarketNews";
 import TrackRecord from "./components/TrackRecord";
 import StockCard from "./components/StockCard";
 import StockTable from "./components/StockTable";
@@ -129,6 +130,7 @@ export default function App() {
       ) : (
       <>
       <MarketPulse summary={tfSummary} stocks={tfStocks} lastUpdated={lastUpdated} timeframe={timeframe} />
+      <MarketNews />
       <TrackRecord refreshing={refreshing} />
       <Advisor />
 
@@ -257,7 +259,7 @@ export default function App() {
       </>
       )}
 
-      {selectedTicker && <StockModal ticker={selectedTicker} timeframe={timeframe} onClose={() => setSelected(null)} />}
+      {selectedTicker && <StockModal ticker={selectedTicker} timeframe={timeframe} onClose={() => setSelected(null)} onSelectTicker={setSelected} />}
     </div>
   );
 }

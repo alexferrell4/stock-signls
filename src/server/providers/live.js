@@ -13,19 +13,47 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     throw new Error("DATA_MODE=live requires FINNHUB_KEY in the environment.");
   }
 
+  const FH = (path) => `https://finnhub.io/api/v1${path}${path.includes("?") ? "&" : "?"}token=${finnhubKey}`;
+
+  // Small TTL cache so slow-moving data (recommendations, fundamentals, market
+  // news) isn't refetched every 5-minute cycle — keeps us under the free-tier
+  // rate limit while still using every endpoint the plan allows.
+  const cache = new Map();
+  async function cached(key, ttlMs, fn) {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.t < ttlMs) return hit.v;
+    const v = await fn();
+    cache.set(key, { t: Date.now(), v });
+    return v;
+  }
+  const getJson = async (url) => { try { const r = await fetchImpl(url); return await r.json(); } catch { return null; } };
+
+  // Latest analyst recommendation counts → a real sentiment score in [-1,1].
+  async function recommendation(ticker) {
+    return cached(`rec:${ticker}`, 60 * 60_000, async () => {
+      const arr = await getJson(FH(`/stock/recommendation?symbol=${ticker}`));
+      return Array.isArray(arr) && arr.length ? arr[0] : null; // newest period first
+    });
+  }
+  function recToSentiment(rec) {
+    if (!rec) return { score: 0, available: false };
+    const total = (rec.strongBuy || 0) + (rec.buy || 0) + (rec.hold || 0) + (rec.sell || 0) + (rec.strongSell || 0);
+    if (!total) return { score: 0, available: false };
+    const raw = ((rec.strongBuy || 0) + 0.5 * (rec.buy || 0) - 0.5 * (rec.sell || 0) - (rec.strongSell || 0)) / total;
+    return { score: Math.max(-1, Math.min(1, round2(raw))), available: true };
+  }
+
   async function quote(ticker) {
-    const res = await fetchImpl(
-      `https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${finnhubKey}`
-    );
+    const res = await fetchImpl(FH(`/quote?symbol=${ticker}`));
     const d = await res.json();
     const price = round2(d.c ?? 0);
     const prevClose = d.pc ?? 0;
     const changePercent = prevClose ? ((d.c - prevClose) / prevClose) * 100 : 0;
 
-    // Finnhub's free tier provides neither intraday volume (the /stock/candle
-    // endpoint 403s) nor news sentiment, so we leave those neutral. The signal
-    // is then driven by real price momentum + real news headlines. Volume and
-    // sentiment become available automatically on a paid plan.
+    // Sentiment now comes from real analyst recommendations. Volume is filled
+    // from the Yahoo history call (see changes()). Only intraday candles remain
+    // premium-only on Finnhub's free plan.
+    const sent = recToSentiment(await recommendation(ticker));
     return {
       price,
       changePercent: round2(changePercent),
@@ -35,8 +63,8 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
       prevClose,
       currentVolume: 0,
       avgVolume: 0,
-      sentimentScore: 0,
-      sentimentAvailable: false, // Finnhub free tier has no news sentiment
+      sentimentScore: sent.score,
+      sentimentAvailable: sent.available,
     };
   }
 
@@ -82,7 +110,7 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
   // no key — Finnhub's free tier has no history). Daily stays from the live
   // Finnhub quote. Anchored on the current price vs past daily closes.
   async function changes(ticker, price, dailyChange) {
-    const out = { daily: dailyChange, weekly: null, monthly: null, series: [] };
+    const out = { daily: dailyChange, weekly: null, monthly: null, series: [], currentVolume: 0, avgVolume: 0 };
     try {
       const res = await fetchImpl(
         `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=1mo&interval=1d`,
@@ -109,8 +137,66 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
         const mo = closes[0]; // ~1 month back
         out.monthly = round2(((price - mo) / mo) * 100);
       }
-    } catch { /* leave weekly/monthly null → falls back to daily in the UI */ }
+
+      // Volume from the same response → makes the signal's volume component
+      // real (today's volume vs the ~month average), no extra request.
+      const vols = (r?.indicators?.quote?.[0]?.volume ?? []).filter((x) => x != null);
+      if (vols.length) {
+        out.avgVolume = Math.round(vols.reduce((a, b) => a + b, 0) / vols.length);
+        out.currentVolume = r?.meta?.regularMarketVolume ?? vols[vols.length - 1];
+      }
+    } catch { /* leave nulls → falls back to daily / neutral volume */ }
     return out;
+  }
+
+  // Everything the free tier exposes for a company, fetched on demand (modal).
+  async function fundamentals(ticker) {
+    return cached(`fund:${ticker}`, 30 * 60_000, async () => {
+      const [profile, metricRes, rec, earnings, peers, cal, insider] = await Promise.all([
+        getJson(FH(`/stock/profile2?symbol=${ticker}`)),
+        getJson(FH(`/stock/metric?symbol=${ticker}&metric=all`)),
+        recommendation(ticker),
+        getJson(FH(`/stock/earnings?symbol=${ticker}`)),
+        getJson(FH(`/stock/peers?symbol=${ticker}`)),
+        getJson(FH(`/calendar/earnings?symbol=${ticker}`)),
+        getJson(FH(`/stock/insider-transactions?symbol=${ticker}`)),
+      ]);
+      const m = metricRes?.metric ?? {};
+      const insiderNet = (insider?.data ?? []).slice(0, 30).reduce((a, t) => a + (t.change || 0), 0);
+      return {
+        profile: profile ? {
+          name: profile.name, industry: profile.finnhubIndustry, exchange: profile.exchange,
+          country: profile.country, ipo: profile.ipo, logo: profile.logo, weburl: profile.weburl,
+          marketCap: profile.marketCapitalization, shareOutstanding: profile.shareOutstanding,
+        } : null,
+        metrics: {
+          high52: m["52WeekHigh"] ?? null, low52: m["52WeekLow"] ?? null,
+          pe: m.peTTM ?? m.peBasicExclExtraTTM ?? null, beta: m.beta ?? null,
+          ret13w: m["13WeekPriceReturnDaily"] ?? null, ret52w: m["52WeekPriceReturnDaily"] ?? null,
+          grossMargin: m.grossMarginTTM ?? null, netMargin: m.netProfitMarginTTM ?? null,
+          divYield: m.currentDividendYieldTTM ?? null, roe: m.roeTTM ?? null,
+        },
+        recommendation: rec ? { strongBuy: rec.strongBuy, buy: rec.buy, hold: rec.hold, sell: rec.sell, strongSell: rec.strongSell, period: rec.period } : null,
+        lastEarnings: Array.isArray(earnings) && earnings[0]
+          ? { period: earnings[0].period, estimate: earnings[0].estimate, actual: earnings[0].actual, surprisePercent: earnings[0].surprisePercent }
+          : null,
+        nextEarnings: cal?.earningsCalendar?.[0] ? { date: cal.earningsCalendar[0].date, epsEstimate: cal.earningsCalendar[0].epsEstimate } : null,
+        peers: Array.isArray(peers) ? peers.filter((p) => p !== ticker).slice(0, 8) : [],
+        insiderNet,
+      };
+    });
+  }
+
+  // General business market news (NewsAPI), for the dashboard feed.
+  async function marketNews() {
+    return cached("marketnews", 10 * 60_000, async () => {
+      if (!newsApiKey) return [];
+      const j = await getJson(`https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=12&apiKey=${newsApiKey}`);
+      return (j?.articles ?? []).map((a) => ({
+        title: a.title, source: a.source?.name ?? "News", url: a.url,
+        publishedAt: a.publishedAt, image: a.urlToImage ?? null,
+      }));
+    });
   }
 
   // On-demand price series matching the timeframe, via Yahoo's chart endpoint
@@ -146,5 +232,5 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     } catch { return []; }
   }
 
-  return { mode: "live", tickers: TICKERS, quote, news, changes, chartSeries, tick() {} };
+  return { mode: "live", tickers: TICKERS, quote, news, changes, chartSeries, fundamentals, marketNews, tick() {} };
 }
