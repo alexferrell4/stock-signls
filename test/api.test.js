@@ -67,6 +67,15 @@ test("GET /api/stocks/:ticker/chart returns a timeframe-shaped series", async ()
   assert.ok(typeof day.series[0].close === "number");
   // intraday series has more points than the ~monthly series
   assert.ok(day.series.length > month.series.length, "daily denser than monthly");
+  // OHLC present for candlesticks
+  const p = day.series[0];
+  assert.ok(["open", "high", "low", "close"].every((k) => typeof p[k] === "number"), "has OHLC");
+});
+
+test("GET /api/stocks/:ticker/chart?compare=1 includes the index series", async () => {
+  const d = await get("/api/stocks/AAPL/chart?tf=monthly&compare=1");
+  assert.ok(d.index && d.index.name, "index present");
+  assert.ok(Array.isArray(d.index.series) && d.index.series.length > 1);
 });
 
 test("GET /api/stocks/:ticker 404s for unknown symbol", async () => {

@@ -9,6 +9,8 @@
 
 import { TICKERS, companyName } from "../universe.js";
 
+const round2 = (v) => Math.round(v * 100) / 100;
+
 // Small string hash → 32-bit seed.
 function seedFor(str) {
   let h = 2166136261;
@@ -129,10 +131,16 @@ export function makeMockProvider() {
     const r = rng(seedFor(ticker + timeframe + "chart") + cycle * 3);
     const back = [];
     let p = price || 100;
-    for (let i = 0; i < cfg.n; i++) { back.push(Math.round(p * 100) / 100); p = p * (1 + (r() - 0.5) * cfg.vol * 2); }
+    for (let i = 0; i < cfg.n; i++) { back.push(round2(p)); p = p * (1 + (r() - 0.5) * cfg.vol * 2); }
     back.reverse();
     const now = Date.now();
-    return back.map((close, i) => ({ t: now - (cfg.n - 1 - i) * cfg.dt, close }));
+    // Build OHLC per bar so the chart can render candlesticks too.
+    return back.map((close, i) => {
+      const open = i > 0 ? back[i - 1] : round2(close * (1 + (r() - 0.5) * cfg.vol));
+      const high = round2(Math.max(open, close) * (1 + r() * cfg.vol));
+      const low = round2(Math.min(open, close) * (1 - r() * cfg.vol));
+      return { t: now - (cfg.n - 1 - i) * cfg.dt, open, high, low, close };
+    });
   }
 
   return {

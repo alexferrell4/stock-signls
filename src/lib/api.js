@@ -12,8 +12,8 @@ export async function fetchStock(ticker) {
   return res.json();
 }
 
-export async function fetchChart(ticker, timeframe) {
-  const res = await fetch(`${BASE}/stocks/${ticker}/chart?tf=${timeframe}`);
+export async function fetchChart(ticker, timeframe, compare = false) {
+  const res = await fetch(`${BASE}/stocks/${ticker}/chart?tf=${timeframe}${compare ? "&compare=1" : ""}`);
   if (!res.ok) throw new Error(`Failed to fetch chart for ${ticker}`);
   return res.json();
 }

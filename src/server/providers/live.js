@@ -123,16 +123,24 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     }[timeframe]) ?? ["1mo", "1d"];
     try {
       const res = await fetchImpl(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=${range}&interval=${interval}`,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`,
         { headers: { "User-Agent": "Mozilla/5.0" } }
       );
       const j = await res.json();
       const r = j?.chart?.result?.[0];
       const ts = r?.timestamp ?? [];
-      const cl = r?.indicators?.quote?.[0]?.close ?? [];
+      const q = r?.indicators?.quote?.[0] ?? {};
+      const cl = q.close ?? [];
       const series = [];
       for (let i = 0; i < cl.length; i++) {
-        if (cl[i] != null) series.push({ t: ts[i] * 1000, close: round2(cl[i]) });
+        if (cl[i] == null) continue;
+        series.push({
+          t: ts[i] * 1000,
+          open: round2(q.open?.[i] ?? cl[i]),
+          high: round2(q.high?.[i] ?? cl[i]),
+          low: round2(q.low?.[i] ?? cl[i]),
+          close: round2(cl[i]),
+        });
       }
       return series;
     } catch { return []; }

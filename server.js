@@ -99,12 +99,19 @@ export function buildApp(env = process.env) {
 
   // Price series for the modal chart, range matched to the timeframe
   // (intraday / 5-day / 1-month). Fetched on demand so it's always fresh.
+  // ?compare=1 also returns the S&P 500 series for a relative overlay.
+  const INDEX = { symbol: "^GSPC", name: "S&P 500", mockBase: 5200 };
   app.get("/api/stocks/:ticker/chart", async (req, res) => {
     const ticker = req.params.ticker.toUpperCase();
     const tf = ["daily", "weekly", "monthly"].includes(req.query.tf) ? req.query.tf : "daily";
     const price = store.stocks[ticker]?.price ?? 0;
     const series = provider.chartSeries ? await provider.chartSeries(ticker, tf, price) : [];
-    res.json({ ticker, timeframe: tf, series });
+    const out = { ticker, timeframe: tf, series };
+    if (req.query.compare && provider.chartSeries) {
+      const idx = await provider.chartSeries(INDEX.symbol, tf, INDEX.mockBase);
+      out.index = { symbol: INDEX.symbol, name: INDEX.name, series: idx };
+    }
+    res.json(out);
   });
 
   // Historical track record — how the model's past signals have played out.

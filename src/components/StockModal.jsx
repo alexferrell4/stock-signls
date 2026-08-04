@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, ComposedChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import SignalGauge from "./SignalGauge";
 import ChatBox from "./ChatBox";
 import { fetchStock, fetchChart } from "../lib/api";
@@ -8,6 +8,41 @@ import { COMPANY } from "./Navbar";
 const f$ = p => p != null ? `$${Number(p).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
 const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" : "var(--hold)";
 const sigDim   = s => s === "BUY" ? "var(--buy-d)" : s === "SELL" ? "var(--sell-d)" : "var(--hold-d)";
+const sigHex   = s => s === "BUY" ? "#00D4A0" : s === "SELL" ? "#FF4D6A" : "#F5A623";
+const r2 = (v) => Math.round(v * 100) / 100;
+
+// Custom candlestick shape for a recharts range Bar (dataKey = [low, high]).
+// recharts positions y at `high` and height down to `low`; we interpolate the
+// open/close pixels within that span to draw the body.
+function Candle({ x, y, width, height, payload }) {
+  if (!payload) return null;
+  const { open, close, high, low } = payload;
+  const color = close >= open ? "#00D4A0" : "#FF4D6A";
+  const span = (high - low) || 1;
+  const pxFor = (v) => y + ((high - v) / span) * height;
+  const cx = x + width / 2;
+  const bodyTop = pxFor(Math.max(open, close));
+  const bodyBot = pxFor(Math.min(open, close));
+  const bw = Math.max(2, width * 0.6);
+  return (
+    <g>
+      <line x1={cx} x2={cx} y1={y} y2={y + height} stroke={color} strokeWidth="1" />
+      <rect x={cx - bw / 2} y={bodyTop} width={bw} height={Math.max(1, bodyBot - bodyTop)} fill={color} />
+    </g>
+  );
+}
+
+function OHLCTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: "var(--surf2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "6px 10px", fontSize: ".68rem", fontFamily: "var(--mono)" }}>
+      <div style={{ color: "var(--muted)", marginBottom: 3 }}>{d.date}</div>
+      <div style={{ color: "var(--dim)" }}>O {d.open}&nbsp; H {d.high}</div>
+      <div style={{ color: "var(--dim)" }}>L {d.low}&nbsp; C <span style={{ color: "var(--text)", fontWeight: 600 }}>{d.close}</span></div>
+    </div>
+  );
+}
 
 function PriceTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -42,6 +77,9 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [chart, setChart]   = useState([]);
+  const [indexSeries, setIndexSeries] = useState([]);
+  const [chartType, setChartType] = useState("area"); // area | candles
+  const [compare, setCompare] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,15 +99,16 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [load, onClose]);
 
-  // Chart range follows the selected timeframe (intraday / 5-day / 1-month).
+  // Chart range follows the selected timeframe (intraday / 5-day / 1-month);
+  // refetches with the S&P 500 series when comparison is on.
   useEffect(() => {
     let cancelled = false;
-    setChart([]);
-    fetchChart(ticker, timeframe)
-      .then((r) => { if (!cancelled) setChart(r.series ?? []); })
-      .catch(() => { if (!cancelled) setChart([]); });
+    setChart([]); setIndexSeries([]);
+    fetchChart(ticker, timeframe, compare)
+      .then((r) => { if (!cancelled) { setChart(r.series ?? []); setIndexSeries(r.index?.series ?? []); } })
+      .catch(() => { if (!cancelled) { setChart([]); setIndexSeries([]); } });
     return () => { cancelled = true; };
-  }, [ticker, timeframe]);
+  }, [ticker, timeframe, compare]);
 
   // Project the selected timeframe over the stock (see App.jsx tfStocks).
   const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
@@ -81,7 +120,23 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
   const chartData = chart.map((p) => ({ date: fmtLabel(p.t), price: p.close }));
-  const chartTitle = timeframe === "daily" ? "Price — today" : timeframe === "weekly" ? "Price — past week" : "Price — past month";
+  const candleData = chart.map((p) => ({ date: fmtLabel(p.t), open: p.open, high: p.high, low: p.low, close: p.close, range: [p.low, p.high] }));
+  const candleDomain = chart.length
+    ? [Math.min(...chart.map((p) => p.low)), Math.max(...chart.map((p) => p.high))]
+    : [0, 1];
+  // Relative-performance overlay: both series normalized to % from their first point.
+  const compareData = (() => {
+    if (!compare || chart.length < 2 || indexSeries.length < 2) return [];
+    const s0 = chart[0].close, i0 = indexSeries[0].close;
+    const n = Math.min(chart.length, indexSeries.length);
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      out.push({ date: fmtLabel(chart[k].t), stock: r2((chart[k].close / s0 - 1) * 100), index: r2((indexSeries[k].close / i0 - 1) * 100) });
+    }
+    return out;
+  })();
+  const chartTitle = compare ? "vs S&P 500 (relative)"
+    : timeframe === "daily" ? "Price — today" : timeframe === "weekly" ? "Price — past week" : "Price — past month";
   const history = data?.history ?? [];
   const sc = s ? sigColor(s.signal) : "var(--hold)";
   const bd = s?.breakdown ?? {};
@@ -146,27 +201,74 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
             </div>
 
             {/* Price chart */}
-            {chartData.length > 1 && (
+            {chart.length > 1 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
                   <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>{chartTitle}</span>
-                  <span style={{ fontSize: ".66rem", fontFamily: "var(--mono)", color: chg >= 0 ? "var(--buy)" : "var(--sell)" }}>
-                    {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
-                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {/* Area / Candles */}
+                    <div style={{ display: "flex", gap: 2, background: "var(--surf2)", border: "1px solid var(--border)", borderRadius: 7, padding: 2, opacity: compare ? 0.4 : 1 }}>
+                      {[["area", "Line"], ["candles", "Candles"]].map(([t, label]) => (
+                        <button key={t} disabled={compare} onClick={() => setChartType(t)} style={{
+                          padding: "3px 10px", border: "none", borderRadius: 5,
+                          background: chartType === t ? "var(--surf3)" : "transparent",
+                          color: chartType === t ? "var(--text)" : "var(--muted)",
+                          fontFamily: "var(--sans)", fontSize: ".66rem", fontWeight: 600, cursor: compare ? "default" : "pointer",
+                        }}>{label}</button>
+                      ))}
+                    </div>
+                    {/* vs S&P 500 */}
+                    <button onClick={() => setCompare((c) => !c)} title="Compare to the S&P 500" style={{
+                      padding: "4px 11px", borderRadius: 7,
+                      border: `1px solid ${compare ? "var(--blue)" : "var(--border2)"}`,
+                      background: compare ? "var(--blue-d)" : "transparent",
+                      color: compare ? "var(--blue)" : "var(--muted)",
+                      fontFamily: "var(--sans)", fontSize: ".66rem", fontWeight: 600, cursor: "pointer",
+                    }}>vs S&amp;P 500</button>
+                  </div>
                 </div>
-                <ResponsiveContainer width="100%" height={170}>
-                  <AreaChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="tl-price-grad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={sc} stopOpacity={0.32} />
-                        <stop offset="100%" stopColor={sc} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
-                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
-                    <Tooltip content={<PriceTooltip />} />
-                    <Area type="monotone" dataKey="price" stroke={sc} strokeWidth={2} fill="url(#tl-price-grad)" />
-                  </AreaChart>
+
+                <ResponsiveContainer width="100%" height={180}>
+                  {compare ? (
+                    <LineChart data={compareData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                      <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => (v >= 0 ? "+" : "") + Math.round(v) + "%"} />
+                      <Tooltip content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div style={{ background: "var(--surf2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "6px 10px", fontSize: ".68rem", fontFamily: "var(--mono)" }}>
+                            <div style={{ color: "var(--muted)", marginBottom: 3 }}>{d.date}</div>
+                            <div style={{ color: sc, fontWeight: 600 }}>{ticker} {d.stock >= 0 ? "+" : ""}{d.stock}%</div>
+                            <div style={{ color: "var(--dim)" }}>S&P 500 {d.index >= 0 ? "+" : ""}{d.index}%</div>
+                          </div>
+                        );
+                      }} />
+                      <Legend wrapperStyle={{ fontSize: ".62rem" }} />
+                      <Line type="monotone" dataKey="stock" name={ticker} stroke={sc} strokeWidth={2} dot={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="index" name="S&P 500" stroke="var(--dim)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  ) : chartType === "candles" ? (
+                    <ComposedChart data={candleData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                      <YAxis domain={candleDomain} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
+                      <Tooltip content={<OHLCTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
+                      <Bar dataKey="range" shape={<Candle />} isAnimationActive={false} />
+                    </ComposedChart>
+                  ) : (
+                    <AreaChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="tl-price-grad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={sc} stopOpacity={0.32} />
+                          <stop offset="100%" stopColor={sc} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                      <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
+                      <Tooltip content={<PriceTooltip />} />
+                      <Area type="monotone" dataKey="price" stroke={sc} strokeWidth={2} fill="url(#tl-price-grad)" />
+                    </AreaChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             )}
