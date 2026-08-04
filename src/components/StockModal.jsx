@@ -1,9 +1,27 @@
 import { useState, useEffect, useCallback } from "react";
-import { AreaChart, Area, ComposedChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, ComposedChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import SignalGauge from "./SignalGauge";
 import ChatBox from "./ChatBox";
 import { fetchStock, fetchChart } from "../lib/api";
+import { useDrawings } from "../hooks/useDrawings";
 import { COMPANY } from "./Navbar";
+
+const ALL_TICKERS = Object.keys(COMPANY);
+const PEER_COLORS = ["#4F8EF7", "#A78BFA", "#F5A623", "#FF7AC6", "#5AD1C0"];
+const DRAW_COLOR = "#A78BFA";
+
+const segBtn = (active) => ({
+  padding: "3px 10px", border: "none", borderRadius: 5,
+  background: active ? "var(--surf3)" : "transparent",
+  color: active ? "var(--text)" : "var(--muted)",
+  fontFamily: "var(--sans)", fontSize: ".66rem", fontWeight: 600, cursor: "pointer",
+});
+const chip = (active, color) => ({
+  padding: "3px 10px", borderRadius: 20, cursor: "pointer", background: "transparent",
+  border: `1px solid ${active ? color : "var(--border2)"}`,
+  color: active ? color : "var(--muted)",
+  fontFamily: "var(--sans)", fontSize: ".64rem", fontWeight: 700,
+});
 
 const f$ = p => p != null ? `$${Number(p).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
 const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" : "var(--hold)";
@@ -78,8 +96,14 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const [loading, setLoading] = useState(true);
   const [chart, setChart]   = useState([]);
   const [indexSeries, setIndexSeries] = useState([]);
+  const [peerSeries, setPeerSeries] = useState([]);
+  const [peers, setPeers] = useState([]);          // added compare tickers
+  const [showIndex, setShowIndex] = useState(true); // include S&P in compare
   const [chartType, setChartType] = useState("area"); // area | candles
   const [compare, setCompare] = useState(false);
+  const [tool, setTool] = useState("none");         // none | hline | trend
+  const [pending, setPending] = useState(null);     // first click of a trendline
+  const { drawings, add: addDrawing, clear: clearDrawings, undo: undoDrawing } = useDrawings(ticker, timeframe);
 
   const load = useCallback(async () => {
     try {
@@ -103,12 +127,15 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   // refetches with the S&P 500 series when comparison is on.
   useEffect(() => {
     let cancelled = false;
-    setChart([]); setIndexSeries([]);
-    fetchChart(ticker, timeframe, compare)
-      .then((r) => { if (!cancelled) { setChart(r.series ?? []); setIndexSeries(r.index?.series ?? []); } })
-      .catch(() => { if (!cancelled) { setChart([]); setIndexSeries([]); } });
+    setChart([]); setIndexSeries([]); setPeerSeries([]);
+    fetchChart(ticker, timeframe, { compare: compare && showIndex, peers: compare ? peers : [] })
+      .then((r) => { if (!cancelled) { setChart(r.series ?? []); setIndexSeries(r.index?.series ?? []); setPeerSeries(r.peers ?? []); } })
+      .catch(() => { if (!cancelled) { setChart([]); setIndexSeries([]); setPeerSeries([]); } });
     return () => { cancelled = true; };
-  }, [ticker, timeframe, compare]);
+  }, [ticker, timeframe, compare, showIndex, peers]);
+
+  // Reset the pending trendline point whenever the drawing tool changes.
+  useEffect(() => { setPending(null); }, [tool, ticker, timeframe]);
 
   // Project the selected timeframe over the stock (see App.jsx tfStocks).
   const s  = data?.stock ? { ...data.stock, ...(data.stock.timeframes?.[timeframe] ?? {}) } : null;
@@ -124,14 +151,21 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const candleDomain = chart.length
     ? [Math.min(...chart.map((p) => p.low)), Math.max(...chart.map((p) => p.high))]
     : [0, 1];
-  // Relative-performance overlay: both series normalized to % from their first point.
+  // Relative-performance overlay: base stock + optional S&P + peer tickers,
+  // each normalized to % from its first point onto a shared % axis.
+  const compareSeries = compare ? [
+    { key: "stock", label: ticker, color: sigColor(s?.signal), series: chart },
+    ...(showIndex && indexSeries.length >= 2 ? [{ key: "index", label: "S&P 500", color: "var(--dim)", dashed: true, series: indexSeries }] : []),
+    ...peerSeries.map((p, i) => ({ key: p.symbol, label: p.symbol, color: PEER_COLORS[i % PEER_COLORS.length], series: p.series })),
+  ].filter((cs) => cs.series.length >= 2) : [];
   const compareData = (() => {
-    if (!compare || chart.length < 2 || indexSeries.length < 2) return [];
-    const s0 = chart[0].close, i0 = indexSeries[0].close;
-    const n = Math.min(chart.length, indexSeries.length);
+    if (!compare || compareSeries.length === 0) return [];
+    const n = Math.min(...compareSeries.map((cs) => cs.series.length));
     const out = [];
     for (let k = 0; k < n; k++) {
-      out.push({ date: fmtLabel(chart[k].t), stock: r2((chart[k].close / s0 - 1) * 100), index: r2((indexSeries[k].close / i0 - 1) * 100) });
+      const row = { date: fmtLabel(chart[k].t) };
+      for (const cs of compareSeries) { const base = cs.series[0].close; row[cs.key] = r2((cs.series[k].close / base - 1) * 100); }
+      out.push(row);
     }
     return out;
   })();
@@ -143,6 +177,45 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
   const ex = s?.explanation;
   const ai = s?.aiAnalysis;
   const chg = s?.changePercent ?? 0;
+
+  // Click-to-draw: snap to the nearest bar's price. hline drops a level;
+  // trend needs two clicks (from → to).
+  const onChartClick = (e) => {
+    if (tool === "none" || !e?.activePayload?.length) return;
+    const p = e.activePayload[0].payload;
+    const y = p.close ?? p.price, x = p.date;
+    if (y == null || x == null) return;
+    if (tool === "hline") addDrawing({ type: "hline", y: r2(y) });
+    else if (tool === "trend") {
+      if (!pending) setPending({ x, y: r2(y) });
+      else { addDrawing({ type: "trend", from: pending, to: { x, y: r2(y) } }); setPending(null); }
+    }
+  };
+
+  // Horizontal levels render as ReferenceLines; trendlines are injected as an
+  // interpolated line series (reliable on a category x-axis, unlike segments).
+  const hlineEls = drawings.map((d, i) => d.type === "hline"
+    ? <ReferenceLine key={`h${i}`} y={d.y} stroke={DRAW_COLOR} strokeDasharray="5 4" strokeWidth={1.2}
+        label={{ value: `$${d.y}`, position: "right", fontSize: 9, fill: DRAW_COLOR }} />
+    : null);
+  const trendKeys = drawings.map((d, i) => (d.type === "trend" ? `trend${i}` : null)).filter(Boolean);
+  const withTrends = (base) => {
+    const dates = base.map((r) => r.date);
+    const rows = base.map((r) => ({ ...r }));
+    drawings.forEach((d, i) => {
+      if (d.type !== "trend") return;
+      let a = dates.indexOf(d.from.x), b = dates.indexOf(d.to.x);
+      if (a < 0 || b < 0) return;
+      if (a > b) { [a, b] = [b, a]; }
+      const y1 = dates.indexOf(d.from.x) <= dates.indexOf(d.to.x) ? d.from.y : d.to.y;
+      const y2 = dates.indexOf(d.from.x) <= dates.indexOf(d.to.x) ? d.to.y : d.from.y;
+      for (let j = a; j <= b; j++) rows[j][`trend${i}`] = r2(y1 + (y2 - y1) * ((j - a) / (b - a || 1)));
+    });
+    return rows;
+  };
+  const trendLines = trendKeys.map((k) => (
+    <Line key={k} type="linear" dataKey={k} stroke={DRAW_COLOR} strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+  ));
 
   return (
     <div
@@ -205,71 +278,111 @@ export default function StockModal({ ticker, timeframe = "daily", onClose }) {
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
                   <span style={{ fontSize: ".63rem", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)" }}>{chartTitle}</span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {/* Area / Candles */}
-                    <div style={{ display: "flex", gap: 2, background: "var(--surf2)", border: "1px solid var(--border)", borderRadius: 7, padding: 2, opacity: compare ? 0.4 : 1 }}>
-                      {[["area", "Line"], ["candles", "Candles"]].map(([t, label]) => (
-                        <button key={t} disabled={compare} onClick={() => setChartType(t)} style={{
-                          padding: "3px 10px", border: "none", borderRadius: 5,
-                          background: chartType === t ? "var(--surf3)" : "transparent",
-                          color: chartType === t ? "var(--text)" : "var(--muted)",
-                          fontFamily: "var(--sans)", fontSize: ".66rem", fontWeight: 600, cursor: compare ? "default" : "pointer",
-                        }}>{label}</button>
-                      ))}
-                    </div>
-                    {/* vs S&P 500 */}
-                    <button onClick={() => setCompare((c) => !c)} title="Compare to the S&P 500" style={{
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {!compare && (
+                      <>
+                        {/* Line / Candles */}
+                        <div style={{ display: "flex", gap: 2, background: "var(--surf2)", border: "1px solid var(--border)", borderRadius: 7, padding: 2 }}>
+                          {[["area", "Line"], ["candles", "Candles"]].map(([t, label]) => (
+                            <button key={t} onClick={() => setChartType(t)} style={segBtn(chartType === t)}>{label}</button>
+                          ))}
+                        </div>
+                        {/* Drawing tools */}
+                        <div style={{ display: "flex", gap: 2, background: "var(--surf2)", border: "1px solid var(--border)", borderRadius: 7, padding: 2 }}>
+                          <button onClick={() => setTool((v) => v === "hline" ? "none" : "hline")} title="Horizontal level" style={segBtn(tool === "hline")}>― Level</button>
+                          <button onClick={() => setTool((v) => v === "trend" ? "none" : "trend")} title="Trendline" style={segBtn(tool === "trend")}>╱ Trend</button>
+                          {drawings.length > 0 && <button onClick={undoDrawing} title="Undo" style={segBtn(false)}>⤺</button>}
+                          {drawings.length > 0 && <button onClick={clearDrawings} title="Clear all" style={segBtn(false)}>Clear</button>}
+                        </div>
+                      </>
+                    )}
+                    {/* Compare */}
+                    <button onClick={() => { setCompare((c) => !c); setTool("none"); }} title="Compare performance" style={{
                       padding: "4px 11px", borderRadius: 7,
                       border: `1px solid ${compare ? "var(--blue)" : "var(--border2)"}`,
                       background: compare ? "var(--blue-d)" : "transparent",
                       color: compare ? "var(--blue)" : "var(--muted)",
                       fontFamily: "var(--sans)", fontSize: ".66rem", fontWeight: 600, cursor: "pointer",
-                    }}>vs S&amp;P 500</button>
+                    }}>Compare</button>
                   </div>
                 </div>
 
-                <ResponsiveContainer width="100%" height={180}>
-                  {compare ? (
-                    <LineChart data={compareData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
-                      <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => (v >= 0 ? "+" : "") + Math.round(v) + "%"} />
-                      <Tooltip content={({ active, payload }) => {
-                        if (!active || !payload?.length) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div style={{ background: "var(--surf2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "6px 10px", fontSize: ".68rem", fontFamily: "var(--mono)" }}>
-                            <div style={{ color: "var(--muted)", marginBottom: 3 }}>{d.date}</div>
-                            <div style={{ color: sc, fontWeight: 600 }}>{ticker} {d.stock >= 0 ? "+" : ""}{d.stock}%</div>
-                            <div style={{ color: "var(--dim)" }}>S&P 500 {d.index >= 0 ? "+" : ""}{d.index}%</div>
-                          </div>
-                        );
-                      }} />
-                      <Legend wrapperStyle={{ fontSize: ".62rem" }} />
-                      <Line type="monotone" dataKey="stock" name={ticker} stroke={sc} strokeWidth={2} dot={false} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="index" name="S&P 500" stroke="var(--dim)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                    </LineChart>
-                  ) : chartType === "candles" ? (
-                    <ComposedChart data={candleData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
-                      <YAxis domain={candleDomain} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
-                      <Tooltip content={<OHLCTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
-                      <Bar dataKey="range" shape={<Candle />} isAnimationActive={false} />
-                    </ComposedChart>
-                  ) : (
-                    <AreaChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="tl-price-grad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={sc} stopOpacity={0.32} />
-                          <stop offset="100%" stopColor={sc} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
-                      <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
-                      <Tooltip content={<PriceTooltip />} />
-                      <Area type="monotone" dataKey="price" stroke={sc} strokeWidth={2} fill="url(#tl-price-grad)" />
-                    </AreaChart>
-                  )}
-                </ResponsiveContainer>
+                {/* Compare tray: S&P toggle + peer chips + add */}
+                {compare && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    <button onClick={() => setShowIndex((v) => !v)} style={chip(showIndex, "var(--dim)")}>S&amp;P 500 {showIndex ? "✓" : ""}</button>
+                    {peers.map((p, i) => (
+                      <button key={p} onClick={() => setPeers((ps) => ps.filter((x) => x !== p))} style={chip(true, PEER_COLORS[i % PEER_COLORS.length])}>{p} ✕</button>
+                    ))}
+                    {peers.length < 4 && (
+                      <select value="" onChange={(e) => { const v = e.target.value; if (v) setPeers((ps) => [...new Set([...ps, v])].slice(0, 4)); }}
+                        style={{ background: "var(--surf2)", border: "1px dashed var(--border2)", borderRadius: 20, padding: "3px 10px", color: "var(--muted)", fontSize: ".64rem", cursor: "pointer" }}>
+                        <option value="">+ Add ticker</option>
+                        {ALL_TICKERS.filter((t) => t !== ticker && !peers.includes(t)).map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                {/* Drawing hint */}
+                {!compare && tool !== "none" && (
+                  <div style={{ fontSize: ".64rem", color: "var(--ai)", marginBottom: 6 }}>
+                    {tool === "hline" ? "Click the chart to drop a price level"
+                      : pending ? "Click the second point of the trendline" : "Click the first point of the trendline"}
+                  </div>
+                )}
+
+                <div style={{ cursor: !compare && tool !== "none" ? "crosshair" : "default" }}>
+                  <ResponsiveContainer width="100%" height={190}>
+                    {compare ? (
+                      <LineChart data={compareData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                        <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => (v >= 0 ? "+" : "") + Math.round(v) + "%"} />
+                        <ReferenceLine y={0} stroke="var(--border2)" />
+                        <Tooltip content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          return (
+                            <div style={{ background: "var(--surf2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "6px 10px", fontSize: ".68rem", fontFamily: "var(--mono)" }}>
+                              <div style={{ color: "var(--muted)", marginBottom: 3 }}>{payload[0].payload.date}</div>
+                              {payload.map((pl) => (
+                                <div key={pl.dataKey} style={{ color: pl.color || pl.stroke, fontWeight: 600 }}>{pl.name} {pl.value >= 0 ? "+" : ""}{pl.value}%</div>
+                              ))}
+                            </div>
+                          );
+                        }} />
+                        <Legend wrapperStyle={{ fontSize: ".62rem" }} />
+                        {compareSeries.map((cs) => (
+                          <Line key={cs.key} type="monotone" dataKey={cs.key} name={cs.label} stroke={cs.color}
+                            strokeWidth={cs.key === "stock" ? 2 : 1.5} strokeDasharray={cs.dashed ? "4 3" : undefined} dot={false} isAnimationActive={false} />
+                        ))}
+                      </LineChart>
+                    ) : chartType === "candles" ? (
+                      <ComposedChart data={withTrends(candleData)} onClick={onChartClick} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                        <YAxis domain={candleDomain} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
+                        <Tooltip content={<OHLCTooltip />} cursor={{ fill: "rgba(255,255,255,.03)" }} />
+                        {hlineEls}
+                        <Bar dataKey="range" shape={<Candle />} isAnimationActive={false} />
+                        {trendLines}
+                      </ComposedChart>
+                    ) : (
+                      <AreaChart data={withTrends(chartData)} onClick={onChartClick} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="tl-price-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={sc} stopOpacity={0.32} />
+                            <stop offset="100%" stopColor={sc} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} minTickGap={38} />
+                        <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => "$" + Math.round(v)} />
+                        <Tooltip content={<PriceTooltip />} />
+                        {hlineEls}
+                        <Area type="monotone" dataKey="price" stroke={sc} strokeWidth={2} fill="url(#tl-price-grad)" />
+                        {trendLines}
+                      </AreaChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
               </div>
             )}
 

@@ -12,8 +12,11 @@ export async function fetchStock(ticker) {
   return res.json();
 }
 
-export async function fetchChart(ticker, timeframe, compare = false) {
-  const res = await fetch(`${BASE}/stocks/${ticker}/chart?tf=${timeframe}${compare ? "&compare=1" : ""}`);
+export async function fetchChart(ticker, timeframe, { compare = false, peers = [] } = {}) {
+  const q = new URLSearchParams({ tf: timeframe });
+  if (compare) q.set("compare", "1");
+  if (peers.length) q.set("peers", peers.join(","));
+  const res = await fetch(`${BASE}/stocks/${ticker}/chart?${q.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch chart for ${ticker}`);
   return res.json();
 }

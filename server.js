@@ -111,6 +111,15 @@ export function buildApp(env = process.env) {
       const idx = await provider.chartSeries(INDEX.symbol, tf, INDEX.mockBase);
       out.index = { symbol: INDEX.symbol, name: INDEX.name, series: idx };
     }
+    // Overlay other tickers (multi-stock compare), max 4.
+    if (req.query.peers && provider.chartSeries) {
+      const list = String(req.query.peers).toUpperCase().split(",").map((s) => s.trim())
+        .filter((t) => TICKERS.includes(t) && t !== ticker).slice(0, 4);
+      out.peers = [];
+      for (const pt of list) {
+        out.peers.push({ symbol: pt, series: await provider.chartSeries(pt, tf, store.stocks[pt]?.price ?? 0) });
+      }
+    }
     res.json(out);
   });
 
