@@ -6,6 +6,7 @@ import TrackRecord from "./components/TrackRecord";
 import StockCard from "./components/StockCard";
 import StockTable from "./components/StockTable";
 import Heatmap from "./components/Heatmap";
+import TomorrowPicks from "./components/TomorrowPicks";
 import StockModal from "./components/StockModal";
 import Advisor from "./components/Advisor";
 import Portfolio from "./components/Portfolio";
@@ -108,7 +109,7 @@ export default function App() {
 
       {/* Page tabs */}
       <div style={{ display: "flex", gap: 4, padding: "12px 28px 0" }}>
-        {[["dashboard", "Dashboard"], ["portfolio", "Portfolio"]].map(([p, label]) => (
+        {[["dashboard", "Dashboard"], ["tomorrow", "Tomorrow"], ["portfolio", "Portfolio"]].map(([p, label]) => (
           <button key={p} onClick={() => setPage(p)} style={{
             padding: "8px 16px", border: "none", borderRadius: 8,
             background: page === p ? "var(--surf3)" : "transparent",
@@ -127,6 +128,8 @@ export default function App() {
 
       {page === "portfolio" ? (
         <Portfolio portfolio={pf.data} loading={pf.loading} error={pf.error} onAdd={pf.add} onRemove={pf.remove} onSelect={setSelected} />
+      ) : page === "tomorrow" ? (
+        <TomorrowPicks stocks={stocks} onSelect={setSelected} />
       ) : (
       <>
       <MarketPulse summary={tfSummary} stocks={tfStocks} lastUpdated={lastUpdated} timeframe={timeframe} />

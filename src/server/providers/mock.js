@@ -101,15 +101,20 @@ export function makeMockProvider() {
   async function changes(ticker, price, dailyChange) {
     const r = rng(seedFor(ticker + "tf") + cycle * 13);
 
-    // Synthesize ~22 daily closes ending at the current price (random walk
+    // Synthesize ~22 daily OHLC bars ending at the current price (random walk
     // back in time, then reversed so the last point is `price`).
     const N = 22;
     const back = [];
     let p = price;
-    for (let i = 0; i < N; i++) { back.push(Math.round(p * 100) / 100); p = p * (1 + (r() - 0.5) * 0.035); }
+    for (let i = 0; i < N; i++) { back.push(round2(p)); p = p * (1 + (r() - 0.5) * 0.035); }
     back.reverse();
     const now = Date.now();
-    const series = back.map((close, i) => ({ t: now - (N - 1 - i) * 86_400_000, close }));
+    const series = back.map((close, i) => {
+      const open = i > 0 ? back[i - 1] : round2(close * (1 + (r() - 0.5) * 0.02));
+      const high = round2(Math.max(open, close) * (1 + r() * 0.015));
+      const low = round2(Math.min(open, close) * (1 - r() * 0.015));
+      return { t: now - (N - 1 - i) * 86_400_000, open, high, low, close };
+    });
 
     return {
       daily: dailyChange,
@@ -168,6 +173,7 @@ export function makeMockProvider() {
       nextEarnings: { date: "2026-10-28", epsEstimate: round2(1 + r() * 3) },
       peers: TICKERS.filter((t) => t !== ticker).slice(0, 6),
       insiderNet: Math.round((r() - 0.5) * 200_000),
+      premarket: { high: round2(base * (1 + r() * 0.02)), low: round2(base * (1 - r() * 0.02)) },
     };
   }
 

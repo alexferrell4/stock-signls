@@ -8,7 +8,7 @@ const sigColor = s => s === "BUY" ? "var(--buy)" : s === "SELL" ? "var(--sell)" 
 const sigDim   = s => s === "BUY" ? "var(--buy-d)" : s === "SELL" ? "var(--sell-d)" : "var(--hold-d)";
 
 export default function StockCard({ stock, onClick, starred, onToggleStar }) {
-  const { ticker, price, changePercent, signal, score, breakdown, reason, volume, aiAnalysis, spark } = stock;
+  const { ticker, price, changePercent, signal, score, breakdown, reason, volume, aiAnalysis, spark, changeFromOpen } = stock;
   const sc  = sigColor(signal);
   const bd  = breakdown ?? {};
   const chg = changePercent ?? 0;
@@ -80,7 +80,14 @@ export default function StockCard({ stock, onClick, starred, onToggleStar }) {
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontSize: ".65rem", color: "var(--muted)" }}>Vol {fv(volume)}</span>
+        <span style={{ fontSize: ".65rem", color: "var(--muted)" }}>
+          Vol {fv(volume)}
+          {changeFromOpen != null && (
+            <span style={{ marginLeft: 7, color: changeFromOpen >= 0 ? "var(--buy)" : "var(--sell)" }}>
+              · open {changeFromOpen >= 0 ? "+" : ""}{changeFromOpen}%
+            </span>
+          )}
+        </span>
         <Sparkline data={spark ?? []} color={sc} width={78} height={22} />
       </div>
 

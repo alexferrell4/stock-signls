@@ -3,6 +3,7 @@ import { AreaChart, Area, ComposedChart, Bar, LineChart, Line, XAxis, YAxis, Too
 import SignalGauge from "./SignalGauge";
 import ChatBox from "./ChatBox";
 import Fundamentals from "./Fundamentals";
+import Technicals from "./Technicals";
 import { fetchStock, fetchChart, fetchFundamentals } from "../lib/api";
 import { useDrawings } from "../hooks/useDrawings";
 import { COMPANY } from "./Navbar";
@@ -395,6 +396,9 @@ export default function StockModal({ ticker, timeframe = "daily", onClose, onSel
                 </div>
               </div>
             )}
+
+            {/* Technicals & levels */}
+            <Technicals tech={s.technicals} changeFromOpen={s.changeFromOpen} premarket={fund?.premarket} price={s.price} />
 
             {/* Gauge */}
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>

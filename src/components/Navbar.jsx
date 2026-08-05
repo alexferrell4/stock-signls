@@ -1,5 +1,6 @@
 import { useClock } from "../hooks/useClock";
 import AlertsBell from "./AlertsBell";
+import { marketSession, fmtMins } from "../lib/killzone";
 
 // Keep in sync with src/server/universe.js UNIVERSE.
 const COMPANY = {
@@ -15,18 +16,10 @@ const COMPANY = {
 
 export { COMPANY };
 
-// Rough US market-hours check (9:30–16:00 ET, Mon–Fri) for the status pill.
-function marketStatus() {
-  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const day = et.getDay();
-  const mins = et.getHours() * 60 + et.getMinutes();
-  const open = day >= 1 && day <= 5 && mins >= 570 && mins <= 960;
-  return open ? { label: "Markets Open", color: "var(--buy)" } : { label: "Markets Closed", color: "var(--muted)" };
-}
-
 export default function Navbar({ nextUpdate, onRefresh, refreshing, onSelect }) {
   const time = useClock();
-  const mkt = marketStatus();
+  const mkt = marketSession(); // recomputed each second via useClock re-render
+  const sessColor = mkt.regularOpen ? "var(--buy)" : mkt.premarket || mkt.afterHours ? "var(--hold)" : "var(--muted)";
 
   const minsLeft = nextUpdate
     ? Math.max(0, Math.round((new Date(nextUpdate) - Date.now()) / 60000))
@@ -59,10 +52,16 @@ export default function Navbar({ nextUpdate, onRefresh, refreshing, onSelect }) 
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: ".72rem", color: "var(--muted)", fontFamily: "var(--mono)" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, color: "var(--dim)" }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: mkt.color, boxShadow: `0 0 6px ${mkt.color}` }} />
-          {mkt.label}
+        <span style={{ display: "flex", alignItems: "center", gap: 7, color: "var(--dim)" }} title={`New York ${mkt.etTime} ET`}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: sessColor, boxShadow: `0 0 6px ${sessColor}` }} />
+          {mkt.session}
         </span>
+        {mkt.inKillzone && (
+          <span title={`${mkt.next?.label} ${fmtMins(mkt.next?.mins)}`} style={{
+            padding: "2px 8px", borderRadius: 5, fontWeight: 700, fontSize: ".62rem", letterSpacing: ".03em",
+            color: mkt.killzoneColor, background: "var(--surf2)", border: `1px solid ${mkt.killzoneColor}`,
+          }}>⚡ {mkt.killzone} KZ</span>
+        )}
         {minsLeft !== null && (
           <span style={{ color: "var(--dim)" }}>
             Next update ~{minsLeft}m

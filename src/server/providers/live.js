@@ -119,13 +119,21 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
       const j = await res.json();
       const r = j?.chart?.result?.[0];
       const ts = r?.timestamp ?? [];
-      const rawCloses = r?.indicators?.quote?.[0]?.close ?? [];
+      const q = r?.indicators?.quote?.[0] ?? {};
+      const rawCloses = q.close ?? [];
       const series = [];
       for (let i = 0; i < rawCloses.length; i++) {
-        if (rawCloses[i] != null) series.push({ t: ts[i] * 1000, close: round2(rawCloses[i]) });
+        if (rawCloses[i] == null) continue;
+        series.push({
+          t: ts[i] * 1000,
+          open: round2(q.open?.[i] ?? rawCloses[i]),
+          high: round2(q.high?.[i] ?? rawCloses[i]),
+          low: round2(q.low?.[i] ?? rawCloses[i]),
+          close: round2(rawCloses[i]),
+        });
       }
       // End the series on the current (intraday) price for a live-looking chart.
-      if (price) series.push({ t: Date.now(), close: price });
+      if (price) series.push({ t: Date.now(), open: price, high: price, low: price, close: price });
       out.series = series;
 
       const closes = series.map((p) => p.close);
@@ -149,10 +157,32 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
     return out;
   }
 
+  // Premarket high/low from Yahoo intraday (pre/post bars before the regular open).
+  async function premarketLevels(ticker) {
+    try {
+      const res = await fetchImpl(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=5m&includePrePost=true`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      );
+      const j = await res.json();
+      const r = j?.chart?.result?.[0];
+      const regStart = r?.meta?.currentTradingPeriod?.regular?.start;
+      const ts = r?.timestamp ?? [];
+      const q = r?.indicators?.quote?.[0] ?? {};
+      let hi = null, lo = null;
+      for (let i = 0; i < ts.length; i++) {
+        if (regStart && ts[i] >= regStart) break; // stop at the regular open
+        if (q.high?.[i] != null) hi = hi == null ? q.high[i] : Math.max(hi, q.high[i]);
+        if (q.low?.[i] != null) lo = lo == null ? q.low[i] : Math.min(lo, q.low[i]);
+      }
+      return hi != null && lo != null ? { high: round2(hi), low: round2(lo) } : null;
+    } catch { return null; }
+  }
+
   // Everything the free tier exposes for a company, fetched on demand (modal).
   async function fundamentals(ticker) {
     return cached(`fund:${ticker}`, 30 * 60_000, async () => {
-      const [profile, metricRes, rec, earnings, peers, cal, insider] = await Promise.all([
+      const [profile, metricRes, rec, earnings, peers, cal, insider, premarket] = await Promise.all([
         getJson(FH(`/stock/profile2?symbol=${ticker}`)),
         getJson(FH(`/stock/metric?symbol=${ticker}&metric=all`)),
         recommendation(ticker),
@@ -160,6 +190,7 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
         getJson(FH(`/stock/peers?symbol=${ticker}`)),
         getJson(FH(`/calendar/earnings?symbol=${ticker}`)),
         getJson(FH(`/stock/insider-transactions?symbol=${ticker}`)),
+        premarketLevels(ticker),
       ]);
       const m = metricRes?.metric ?? {};
       const insiderNet = (insider?.data ?? []).slice(0, 30).reduce((a, t) => a + (t.change || 0), 0);
@@ -183,6 +214,7 @@ export function makeLiveProvider({ finnhubKey, newsApiKey, fetchImpl = fetch }) 
         nextEarnings: cal?.earningsCalendar?.[0] ? { date: cal.earningsCalendar[0].date, epsEstimate: cal.earningsCalendar[0].epsEstimate } : null,
         peers: Array.isArray(peers) ? peers.filter((p) => p !== ticker).slice(0, 8) : [],
         insiderNet,
+        premarket,
       };
     });
   }

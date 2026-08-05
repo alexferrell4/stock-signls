@@ -6,6 +6,7 @@
 import { computeSignal, scoreText } from "./signal.js";
 import { companyName, TIMEFRAMES } from "./universe.js";
 import { detectAlerts } from "./alerts.js";
+import { computeTechnicals } from "./indicators.js";
 
 const HISTORY_LEN = 60; // keep last N score points per ticker
 
@@ -94,6 +95,14 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       };
     }
 
+    // Technical indicators from the daily OHLC series (9 EMA, RSI, FVG), plus
+    // volume-vs-average and the change since today's open.
+    const technicals = {
+      ...computeTechnicals(changes.series, quote.price),
+      volumeVsAvg: avgVolume > 0 ? Math.round((currentVolume / avgVolume) * 100) / 100 : null,
+    };
+    const changeFromOpen = quote.open > 0 ? Math.round(((quote.price - quote.open) / quote.open) * 10000) / 100 : null;
+
     // Top-level fields mirror the DAILY timeframe (canonical for alerts,
     // track record, portfolio, and any client that ignores timeframes).
     const daily = timeframes.daily ?? {};
@@ -107,6 +116,8 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       volume: currentVolume,
       avgVolume,
       finnhubSentiment: quote.sentimentScore,
+      technicals,
+      changeFromOpen,
       ...daily,
       timeframes,
       updatedAt: new Date().toISOString(),
