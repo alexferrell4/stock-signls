@@ -34,6 +34,7 @@ function nullDb() {
     evaluatePending() { return 0; },
     getTrackRecord() { return { enabled: false, total: 0, evaluated: 0, overall: null, bySignal: [], best: null, worst: null }; },
     getTickerHistory() { return []; },
+    getLastSignals() { return {}; },
     upsertHolding() {},
     removeHolding() {},
     listHoldings() { return []; },
@@ -180,6 +181,19 @@ export function createDb(env = process.env) {
     ).all(ticker, limit);
   }
 
+  // Latest recorded signal per ticker — used to seed the alert engine on
+  // startup so signal changes across a restart are still detected.
+  function getLastSignals() {
+    const rows = db.prepare(
+      `SELECT s.ticker, s.signal FROM snapshots s
+       JOIN (SELECT ticker, MAX(ts_ms) mx FROM snapshots GROUP BY ticker) m
+         ON s.ticker = m.ticker AND s.ts_ms = m.mx`
+    ).all();
+    const out = {};
+    for (const r of rows) out[r.ticker] = r.signal;
+    return out;
+  }
+
   // ── Portfolio holdings (Phase 3) ──────────────────────────────
   const holdingUpsert = db.prepare(
     `INSERT INTO holdings (ticker, shares, cost_basis, updated_at) VALUES (?, ?, ?, ?)
@@ -230,7 +244,7 @@ export function createDb(env = process.env) {
 
   return {
     enabled: true,
-    recordSnapshot, evaluatePending, getTrackRecord, getTickerHistory,
+    recordSnapshot, evaluatePending, getTrackRecord, getTickerHistory, getLastSignals,
     upsertHolding, removeHolding, listHoldings,
     recordAlert, listAlerts, unreadAlertCount, markAlertsRead,
     close: () => db.close(),

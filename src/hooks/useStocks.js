@@ -35,7 +35,9 @@ export function useStocks() {
     const tick = async () => {
       if (stopped) return;
       const ok = await load();
-      timer = setTimeout(tick, ok ? 5 * 60 * 1000 : 3000);
+      // Poll frequently so the UI reflects the server's price ticks; back off
+      // to a fast retry while the API is unreachable.
+      timer = setTimeout(tick, ok ? 10 * 1000 : 3000);
     };
     tick();
     return () => { stopped = true; clearTimeout(timer); };

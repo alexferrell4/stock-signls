@@ -24,6 +24,9 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
     news: {},          // ticker -> [news items]
     history: {},       // ticker -> [{ time, score, signal }]
     priceHistory: {},  // ticker -> [{ t, close }] daily price series
+    // Seeded from the DB so alert detection survives a restart (detects signal
+    // changes that happened while the server was down, not just within a run).
+    lastSignals: db.getLastSignals ? db.getLastSignals() : {},
     lastUpdated: null,
     nextUpdate: null,
     refreshing: false,
@@ -110,6 +113,7 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       ticker,
       company: companyName(ticker),
       price: quote.price,
+      prevClose: quote.prevClose,
       high: quote.high,
       low: quote.low,
       open: quote.open,
@@ -137,11 +141,9 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
     store.refreshing = true;
     store.lastError = null;
     try {
-      // Snapshot signals before this cycle overwrites them, so we can detect
-      // transitions (e.g. a held position flipping BUY → SELL) afterward.
-      const prevSignals = Object.fromEntries(
-        Object.values(store.stocks).map((s) => [s.ticker, s.signal])
-      );
+      // Previous signals come from the persisted map (seeded from the DB on
+      // startup), so transitions are detected even across a restart.
+      const prevSignals = { ...store.lastSignals };
 
       const prices = {};
       for (const ticker of provider.tickers) {
@@ -176,6 +178,9 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
       }
       store.lastAlerts = alerts.length;
 
+      // Persist the current signals as the new baseline for next time.
+      for (const ticker of Object.keys(store.stocks)) store.lastSignals[ticker] = store.stocks[ticker].signal;
+
       provider.tick?.();
       store.lastUpdated = nowIso;
     } finally {
@@ -183,5 +188,32 @@ export function createStore({ provider, ai, db = NO_DB, channel = NO_CHANNEL }) 
     }
   }
 
-  return { store, refreshAll, refreshOne, scoreText };
+  const round2 = (v) => Math.round(v * 100) / 100;
+
+  // Lightweight price tick between full refreshes: updates just price / change%
+  // / change-since-open so the numbers move more often. In live mode this is a
+  // quote-only fetch per ticker; in mock it applies a small random walk so the
+  // board visibly ticks. Full signal/news recompute stays on refreshAll.
+  async function tickPrices({ spacingMs = 0 } = {}) {
+    if (store.refreshing) return; // don't collide with a full refresh
+    for (const ticker of provider.tickers) {
+      const cur = store.stocks[ticker];
+      if (!cur) continue;
+      let price = cur.price;
+      if (provider.mode === "mock") {
+        price = round2(cur.price * (1 + (Math.random() - 0.5) * 0.0025));
+      } else {
+        try { price = (await provider.quote(ticker)).price; } catch { continue; }
+        if (spacingMs) await new Promise((r) => setTimeout(r, spacingMs));
+      }
+      if (!price) continue;
+      cur.price = price;
+      if (cur.prevClose) cur.changePercent = round2(((price - cur.prevClose) / cur.prevClose) * 100);
+      if (cur.open > 0) cur.changeFromOpen = round2(((price - cur.open) / cur.open) * 100);
+      if (cur.timeframes?.daily) cur.timeframes.daily.changePercent = cur.changePercent;
+    }
+    store.lastUpdated = new Date().toISOString();
+  }
+
+  return { store, refreshAll, refreshOne, tickPrices, scoreText };
 }

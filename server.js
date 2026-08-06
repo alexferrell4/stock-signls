@@ -34,10 +34,14 @@ export function buildApp(env = process.env) {
   const ai = makeAI(env);
   const db = createDb(env);
   const channel = makeAlertChannel(env);
-  const { store, refreshAll } = createStore({ provider, ai, db, channel });
+  const { store, refreshAll, tickPrices } = createStore({ provider, ai, db, channel });
 
   const REFRESH_MIN = Number(env.REFRESH_MINUTES ?? 5);
   const spacingMs = provider.mode === "live" ? 1500 : 0; // rate-limit live calls (30 tickers)
+  // Lightweight price tick between full refreshes. Live free tier is delayed
+  // and rate-limited, so ~45s is as fast as it's worth; mock ticks every 3s.
+  const TICK_MS = provider.mode === "live" ? 45_000 : 3_000;
+  const tickSpacing = provider.mode === "live" ? 300 : 0;
 
   const app = express();
   app.use(express.json());
@@ -231,7 +235,7 @@ export function buildApp(env = process.env) {
     });
   }
 
-  return { app, store, refreshAll, provider, ai, db, REFRESH_MIN, spacingMs };
+  return { app, store, refreshAll, tickPrices, provider, ai, db, REFRESH_MIN, spacingMs, TICK_MS, tickSpacing };
 }
 
 // ─── Scheduler ──────────────────────────────────────────────────
@@ -250,7 +254,7 @@ function isUsMarketOpen(date = new Date()) {
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
   const PORT = Number(process.env.PORT ?? 3000);
-  const { app, store, refreshAll, provider, ai, REFRESH_MIN, spacingMs } = buildApp();
+  const { app, store, refreshAll, tickPrices, provider, ai, REFRESH_MIN, spacingMs, TICK_MS, tickSpacing } = buildApp();
 
   app.listen(PORT, async () => {
     console.log(`Trendline API on http://localhost:${PORT}  [data:${provider.mode} ai:${ai.mode}]`);
@@ -258,10 +262,17 @@ if (isMain) {
     await refreshAll({ spacingMs });
     store.nextUpdate = new Date(Date.now() + REFRESH_MIN * 60_000).toISOString();
 
+    // Full refresh (signals, news, technicals) on the long interval.
     setInterval(async () => {
       if (provider.mode === "live" && !isUsMarketOpen()) return;
       await refreshAll({ spacingMs });
       store.nextUpdate = new Date(Date.now() + REFRESH_MIN * 60_000).toISOString();
     }, REFRESH_MIN * 60_000);
+
+    // Frequent lightweight price tick so the numbers move between full refreshes.
+    setInterval(async () => {
+      if (provider.mode === "live" && !isUsMarketOpen()) return;
+      await tickPrices({ spacingMs: tickSpacing });
+    }, TICK_MS);
   });
 }
